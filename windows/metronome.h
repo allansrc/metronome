@@ -21,14 +21,14 @@ class Metronome
 public:
     Metronome(const std::vector<uint8_t> &mainFileBytes,
               const std::vector<uint8_t> &accentedFileBytes,
-              int bpm, int timeSignature, double volume, int sampleRate);
+              int bpm, const std::vector<int> &accentPattern, double volume, int sampleRate);
     ~Metronome();
 
     void Play();
     void Pause();
     void Stop();
     void SetBPM(int bpm);
-    void SetTimeSignature(int timeSignature);
+    void SetAccentPattern(const std::vector<int> &accentPattern);
     void SetVolume(double volume);
     void SetAudioFile(const std::vector<uint8_t> &mainFileBytes, const std::vector<uint8_t> &accentedSound);
     void EnableTickCallback(std::shared_ptr<flutter::EventSink<flutter::EncodableValue>> eventSink);
@@ -36,9 +36,12 @@ public:
     void Destroy();
     int Metronome::GetVolume() const;
     int audioBpm = 120;
-    int audioTimeSignature = 4;
+    std::vector<int> accentPattern = {4};
 
 private:
+    static std::vector<int> NormalizeAccentPattern(const std::vector<int> &pattern);
+    int GetTotalBeats() const;
+    bool IsAccentBeat(int index) const;
     void StartMetronome();
     void InitializeAudio();
     void OnBufferDone();

@@ -1,5 +1,8 @@
 package com.sumsg.metronome;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import androidx.annotation.NonNull;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.EventChannel;
@@ -74,11 +77,19 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
       case "getBPM":
         result.success(metronome.audioBpm);
         break;
-      case "setTimeSignature":
-        setTimeSignature(call);
+      case "setAccentPattern":
+        setAccentPattern(call);
         break;
-      case "getTimeSignature":
-        result.success(metronome.audioTimeSignature);
+      case "getAccentPattern":
+        if (metronome != null && metronome.accentPattern != null) {
+          List<Integer> list = new ArrayList<>();
+          for (int v : metronome.accentPattern) {
+            list.add(v);
+          }
+          result.success(list);
+        } else {
+          result.success(new ArrayList<Integer>());
+        }
         break;
       case "setAudioFile":
         setAudioFile(call);
@@ -109,8 +120,7 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     }
     boolean enableTickCallback = Boolean.TRUE.equals(call.argument("enableTickCallback"));
 
-    Integer timeSignature = call.argument("timeSignature");
-    int timeSignatureValue = (timeSignature != null) ? timeSignature : 0;
+    int[] accentPattern = readAccentPattern(call);
 
     Integer bpmValue = call.argument("bpm");
     int bpm = (bpmValue != null) ? bpmValue : 120;
@@ -121,7 +131,7 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     Integer sampleRateValue = call.argument("sampleRate");
     int sampleRate = (sampleRateValue != null) ? sampleRateValue : 44100;
 
-    metronome = new Metronome(mainFileBytes, accentedFileBytes, bpm, timeSignatureValue, volume, sampleRate);
+    metronome = new Metronome(mainFileBytes, accentedFileBytes, bpm, accentPattern, volume, sampleRate);
 
     if (enableTickCallback && eventTickSink != null) {
       metronome.enableTickCallback(eventTickSink);
@@ -147,12 +157,25 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     }
   }
 
-  private void setTimeSignature(@NonNull MethodCall call) {
-    if (metronome != null) {
-      Integer _timeSignature = call.argument("timeSignature");
-      if (_timeSignature != null) {
-        metronome.setTimeSignature(_timeSignature);
+  private static int[] readAccentPattern(@NonNull MethodCall call) {
+    List<Integer> list = call.argument("accentPattern");
+    if (list == null || list.isEmpty()) {
+      return new int[]{4};
+    }
+    int[] out = new int[list.size()];
+    for (int i = 0; i < list.size(); i++) {
+      Integer v = list.get(i);
+      if (v == null || v < 1) {
+        return new int[]{4};
       }
+      out[i] = v;
+    }
+    return out;
+  }
+
+  private void setAccentPattern(@NonNull MethodCall call) {
+    if (metronome != null) {
+      metronome.setAccentPattern(readAccentPattern(call));
     }
   }
 

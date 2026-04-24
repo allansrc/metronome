@@ -28,7 +28,7 @@ class MetronomeWeb extends MetronomePlatform {
   bool _isPlaying = false;
   int _currentTick = 0;
   int _bpm = 120;
-  int _timeSignature = 4;
+  List<int> _accentPattern = const [4];
   double _volume = 1.0;
   bool _enableTickCallback = false;
   int _sampleRate = 44100;
@@ -38,6 +38,29 @@ class MetronomeWeb extends MetronomePlatform {
   final double _lookahead = 0.1;
   final double _scheduleInterval = 0.05;
 
+  int get _totalBeats =>
+      _accentPattern.fold<int>(0, (sum, g) => sum + g);
+
+  bool _isAccentBeat(int tick) {
+    int pos = 0;
+    for (final group in _accentPattern) {
+      if (tick == pos) return true;
+      pos += group;
+    }
+    return false;
+  }
+
+  void _validateAccentPattern(List<int> accentPattern) {
+    if (accentPattern.isEmpty) {
+      throw Exception('accentPattern must not be empty');
+    }
+    for (final g in accentPattern) {
+      if (g < 1) {
+        throw Exception('accentPattern groups must be >= 1');
+      }
+    }
+  }
+
   @override
   Future<void> init(
     String mainPath, {
@@ -45,9 +68,10 @@ class MetronomeWeb extends MetronomePlatform {
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
-    int timeSignature = 4,
+    List<int> accentPattern = const [4],
     int sampleRate = 44100,
   }) async {
+    _validateAccentPattern(accentPattern);
     _sampleRate = sampleRate;
     _audioContext = web.AudioContext(
       web.AudioContextOptions(
@@ -63,7 +87,7 @@ class MetronomeWeb extends MetronomePlatform {
       _accentedSoundBuffer = await _bytesToAudioBuffer(accentedPath);
     }
     _bpm = bpm;
-    _timeSignature = timeSignature;
+    _accentPattern = List<int>.from(accentPattern);
     _volume = volume / 100;
     _enableTickCallback = enableTickCallback;
   }
@@ -108,8 +132,8 @@ class MetronomeWeb extends MetronomePlatform {
   }
 
   @override
-  Future<int?> getTimeSignature() async {
-    return _timeSignature;
+  Future<List<int>?> getAccentPattern() async {
+    return List<int>.from(_accentPattern);
   }
 
   @override
@@ -130,10 +154,9 @@ class MetronomeWeb extends MetronomePlatform {
   }
 
   @override
-  Future<void> setTimeSignature(int timeSignature) async {
-    if (timeSignature != _timeSignature) {
-      _timeSignature = timeSignature;
-    }
+  Future<void> setAccentPattern(List<int> accentPattern) async {
+    _validateAccentPattern(accentPattern);
+    _accentPattern = List<int>.from(accentPattern);
   }
 
   @override
@@ -175,7 +198,7 @@ class MetronomeWeb extends MetronomePlatform {
   }
 
   void _scheduleBeat(double time) {
-    final isAccented = (_currentTick % _timeSignature) == 0;
+    final isAccented = _isAccentBeat(_currentTick);
     final buffer = isAccented ? _accentedSoundBuffer : _mainSoundBuffer;
     final source = _audioContext!.createBufferSource();
     source.buffer = buffer;
@@ -196,7 +219,8 @@ class MetronomeWeb extends MetronomePlatform {
       if (_enableTickCallback) {
         tickController.add(_currentTick);
       }
-      _currentTick = (_currentTick + 1) % _timeSignature;
+      final tb = _totalBeats;
+      _currentTick = tb < 1 ? 0 : (_currentTick + 1) % tb;
     });
   }
 

@@ -34,7 +34,7 @@ abstract class MetronomePlatform extends PlatformInterface {
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
-    int timeSignature = 4,
+    List<int> accentPattern = const [4],
     int sampleRate = 44100,
   }) {
     throw UnimplementedError('init() has not been implemented.');
@@ -79,12 +79,12 @@ abstract class MetronomePlatform extends PlatformInterface {
     throw UnimplementedError('getBPM() has not been implemented.');
   }
 
-  Future<void> setTimeSignature(int timeSignature) {
-    throw UnimplementedError('setTimeSignature() has not been implemented.');
+  Future<void> setAccentPattern(List<int> accentPattern) {
+    throw UnimplementedError('setAccentPattern() has not been implemented.');
   }
 
-  Future<int?> getTimeSignature() {
-    throw UnimplementedError('getTimeSignature() has not been implemented.');
+  Future<List<int>?> getAccentPattern() {
+    throw UnimplementedError('getAccentPattern() has not been implemented.');
   }
 
   Future<void> destroy() {

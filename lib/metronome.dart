@@ -27,7 +27,7 @@ class Metronome {
   /// @param accentedPath: the path of the accented audio file, default ''
   /// @param bpm: the beats per minute, default `120`
   /// @param volume: the volume of the metronome, default `50`%
-  /// @param timeSignature: the timeSignature of the metronome, default `4`
+  /// @param accentPattern: group sizes per bar (first beat of each group is accented), default `[4]`
   /// @param sampleRate: the sampleRate of the metronome, default `44100`
   /// ```
   Future<void> init(
@@ -36,7 +36,7 @@ class Metronome {
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
-    int timeSignature = 4,
+    List<int> accentPattern = const [4],
     int sampleRate = 44100,
   }) async {
     try {
@@ -46,7 +46,7 @@ class Metronome {
         bpm: bpm,
         volume: volume,
         enableTickCallback: enableTickCallback,
-        timeSignature: timeSignature,
+        accentPattern: accentPattern,
         sampleRate: sampleRate,
       );
       _initialized = true;
@@ -106,15 +106,15 @@ class Metronome {
     return bpm ?? 120;
   }
 
-  ///set the time signature of the metronome
-  Future<void> setTimeSignature(int timeSignature) async {
-    return MetronomePlatform.instance.setTimeSignature(timeSignature);
+  ///set the accent pattern (group sizes; first beat of each group is accented)
+  Future<void> setAccentPattern(List<int> accentPattern) async {
+    return MetronomePlatform.instance.setAccentPattern(accentPattern);
   }
 
-  ///get the signature of the metronome
-  Future<int> getTimeSignature() async {
-    int? timeSignature = await MetronomePlatform.instance.getTimeSignature();
-    return timeSignature ?? 0;
+  ///get the accent pattern of the metronome
+  Future<List<int>> getAccentPattern() async {
+    List<int>? pattern = await MetronomePlatform.instance.getAccentPattern();
+    return pattern ?? const [4];
   }
 
   ///destroy the metronome

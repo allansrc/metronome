@@ -11,15 +11,29 @@ class Metronome {
     private var audioFileAccented: AVAudioFile
     public var audioBpm: Int = 120
     public var audioVolume: Float = 0.5
-    public var audioTimeSignature: Int = 0
+    /// Group sizes per bar; first beat of each group uses the accented sound.
+    public var accentPattern: [Int] = [4]
 
     private var sampleRate: Int = 44100
+
+    private var totalBeats: Int {
+        accentPattern.reduce(0, +)
+    }
+
+    private func isAccentBeat(_ index: Int) -> Bool {
+        var pos = 0
+        for group in accentPattern {
+            if index == pos { return true }
+            pos += group
+        }
+        return false
+    }
     private var timer: DispatchSourceTimer?
     private var startTime: AVAudioTime?
     /// Initialize the metronome with the main and accented audio files.
-    init(mainFileBytes: Data, accentedFileBytes: Data, bpm: Int, timeSignature: Int = 0, volume: Float, sampleRate: Int) {
+    init(mainFileBytes: Data, accentedFileBytes: Data, bpm: Int, accentPattern: [Int], volume: Float, sampleRate: Int) {
         self.sampleRate = sampleRate
-        audioTimeSignature = timeSignature
+        self.accentPattern = accentPattern.isEmpty ? [4] : accentPattern
         audioBpm = bpm
         audioVolume = volume
         // Initialize audio files
@@ -109,10 +123,10 @@ class Metronome {
             }
         }
     }
-    ///Set the TimeSignature of the metronome.
-    func setTimeSignature(timeSignature: Int) {
-        if audioTimeSignature != timeSignature {
-            audioTimeSignature = timeSignature
+    func setAccentPattern(accentPattern newPattern: [Int]) {
+        let normalized = newPattern.isEmpty ? [4] : newPattern
+        if accentPattern != normalized {
+            accentPattern = normalized
             if isPlaying {
                 pause()
                 play()
@@ -136,10 +150,6 @@ class Metronome {
         reconnectPlayerNode()
 
         if wasPlaying { play() }
-    }
-    
-    var getTimeSignature: Int {
-        return audioTimeSignature
     }
     
     var getVolume: Int {
@@ -217,7 +227,8 @@ class Metronome {
         bufferMainClick.frameLength = beatLength
 
         let bufferBar: AVAudioPCMBuffer
-        if self.audioTimeSignature < 2 {
+        let beats = totalBeats
+        if beats < 2 {
             bufferBar = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: beatLength)!
             bufferBar.frameLength = beatLength
 
@@ -230,16 +241,16 @@ class Metronome {
             try! audioFileAccented.read(into: bufferAccentedClick)
             bufferAccentedClick.frameLength = beatLength
 
-            bufferBar = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: beatLength * AVAudioFrameCount(self.audioTimeSignature))!
-            bufferBar.frameLength = beatLength * AVAudioFrameCount(self.audioTimeSignature)
+            bufferBar = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: beatLength * AVAudioFrameCount(beats))!
+            bufferBar.frameLength = beatLength * AVAudioFrameCount(beats)
 
             let channelCount = Int(audioFileMain.processingFormat.channelCount)
             let mainClickArray = Array(UnsafeBufferPointer(start: bufferMainClick.floatChannelData![0], count: channelCount * Int(beatLength)))
             let accentedClickArray = Array(UnsafeBufferPointer(start: bufferAccentedClick.floatChannelData![0], count: channelCount * Int(beatLength)))
 
             var barArray = [Float]()
-            for i in 0..<self.audioTimeSignature {
-                if i == 0 {
+            for i in 0..<beats {
+                if isAccentBeat(i) {
                     barArray.append(contentsOf: accentedClickArray)
                 } else {
                     barArray.append(contentsOf: mainClickArray)
@@ -276,7 +287,8 @@ class Metronome {
                   let elapsedTime = self.getElapsedTime(from: startTime, to: currentTime) else { return }
 
             let currentBeat = Int(elapsedTime / beatDuration)
-            let currentTick = (self.audioTimeSignature > 1) ? (currentBeat % self.audioTimeSignature) : 0
+            let tb = self.totalBeats
+            let currentTick = (tb > 1) ? (currentBeat % tb) : 0
 
             DispatchQueue.main.async {
                 self.eventTick?.send(res: currentTick)

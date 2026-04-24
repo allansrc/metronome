@@ -6,6 +6,33 @@ import 'package:flutter/services.dart';
 
 import 'metronome_platform_interface.dart';
 
+void _validateAccentPattern(List<int> accentPattern) {
+  if (accentPattern.isEmpty) {
+    throw Exception('accentPattern must not be empty');
+  }
+  for (final g in accentPattern) {
+    if (g < 1) {
+      throw Exception('accentPattern groups must be >= 1');
+    }
+  }
+}
+
+List<int>? _decodeAccentPattern(dynamic value) {
+  if (value == null) return null;
+  if (value is! List) return null;
+  final out = <int>[];
+  for (final e in value) {
+    if (e is int) {
+      out.add(e);
+    } else if (e is num) {
+      out.add(e.toInt());
+    } else {
+      return null;
+    }
+  }
+  return out;
+}
+
 /// An implementation of [MetronomePlatform] that uses method channels.
 class MethodChannelMetronome extends MetronomePlatform {
   /// The method channel used to interact with the native platform.
@@ -32,7 +59,7 @@ class MethodChannelMetronome extends MetronomePlatform {
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
-    int timeSignature = 4,
+    List<int> accentPattern = const [4],
     int sampleRate = 44100,
   }) async {
     if (mainPath == '') {
@@ -44,9 +71,7 @@ class MethodChannelMetronome extends MetronomePlatform {
     if (bpm <= 0) {
       throw Exception('BPM must be greater than 0');
     }
-    if (timeSignature < 0) {
-      throw Exception('timeSignature must be greater than 0');
-    }
+    _validateAccentPattern(accentPattern);
     if (sampleRate <= 0) {
       throw Exception('sampleRate must be greater than 0');
     }
@@ -62,7 +87,7 @@ class MethodChannelMetronome extends MetronomePlatform {
         'bpm': bpm,
         'volume': volume / 100.0,
         'enableTickCallback': enableTickCallback,
-        'timeSignature': timeSignature,
+        'accentPattern': accentPattern,
         'sampleRate': sampleRate,
       });
     } catch (e) {
@@ -135,13 +160,12 @@ class MethodChannelMetronome extends MetronomePlatform {
   }
 
   @override
-  Future<void> setTimeSignature(int timeSignature) async {
-    if (timeSignature < 0) {
-      throw Exception('timeSignature must be a positive integer');
-    }
+  @override
+  Future<void> setAccentPattern(List<int> accentPattern) async {
+    _validateAccentPattern(accentPattern);
     try {
-      await methodChannel.invokeMethod<void>('setTimeSignature', {
-        'timeSignature': timeSignature,
+      await methodChannel.invokeMethod<void>('setAccentPattern', {
+        'accentPattern': accentPattern,
       });
     } catch (e) {
       if (kDebugMode) {
@@ -151,15 +175,17 @@ class MethodChannelMetronome extends MetronomePlatform {
   }
 
   @override
-  Future<int?> getTimeSignature() async {
+  @override
+  Future<List<int>?> getAccentPattern() async {
     try {
-      return await methodChannel.invokeMethod<int>('getTimeSignature');
+      final raw = await methodChannel.invokeMethod<dynamic>('getAccentPattern');
+      return _decodeAccentPattern(raw);
     } catch (e) {
       if (kDebugMode) {
         print(e);
       }
 
-      return 0;
+      return const [4];
     }
   }
 
