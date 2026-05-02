@@ -160,7 +160,6 @@ class MethodChannelMetronome extends MetronomePlatform {
   }
 
   @override
-  @override
   Future<void> setAccentPattern(List<int> accentPattern) async {
     _validateAccentPattern(accentPattern);
     try {
@@ -174,7 +173,6 @@ class MethodChannelMetronome extends MetronomePlatform {
     }
   }
 
-  @override
   @override
   Future<List<int>?> getAccentPattern() async {
     try {

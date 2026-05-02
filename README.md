@@ -3,9 +3,9 @@
 [![pub package](https://img.shields.io/pub/v/metronome.svg)](https://pub.dev/packages/metronome)
 
 An efficient, accurate, cross-platform Flutter metronome plugin.
-Supports configurable BPM, volume, time signature, custom audio sources, and real-time tick callbacks.
+Supports configurable BPM, volume, accent patterns (musical groupings), custom audio sources, and real-time tick callbacks.
 
-**Version 2.0 refactored most of the code, with better performance (BPM>600), less resource usage, and more accurate time signature callback.**
+**Version 2.0** refactored most of the code for better performance (BPM>600), less resource usage, and more accurate callbacks. **Version 3.0** replaces a single beat count with `accentPattern` (group sizes) so compound and odd meters match real accent groupings; see [time-signature.md](time-signature.md) for theory and examples.
 
 ![Metronome](https://raw.githubusercontent.com/biner88/metronome/main/screenshot/demo2.png)
 
@@ -29,7 +29,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  metronome: ^2.0.7
+  metronome: ^3.0.0
 ```
 
 Then run:
@@ -51,7 +51,7 @@ await metronome.init(
   bpm: 120,
   volume: 50,
   enableTickCallback: true,
-  timeSignature: 4,
+  accentPattern: const [4],
   sampleRate: 44100,
 );
 
@@ -73,7 +73,7 @@ Initializes the metronome engine. Must be called before any other method.
 | `bpm`                | `int`    | `120`   | Beats per minute. Must be > 0.                           |
 | `volume`             | `int`    | `50`    | Volume level, 0–100.                                     |
 | `enableTickCallback` | `bool`   | `false` | Whether to emit events on `tickStream`.                  |
-| `timeSignature`      | `int`    | `4`     | Beats per bar. Beat 1 uses the accented sound. Accents are disabled when < 2. |
+| `accentPattern`      | `List<int>` | `[4]` | Group sizes in one bar. The first beat of each group uses the accented sound. Sum = beats per bar. Example: `[3, 3]` is 6/8 compound (A b b A b b); `[2, 2, 3]` is a common 7/8 grouping. |
 | `sampleRate`         | `int`    | `44100` | Audio sample rate in Hz.                                 |
 
 ### Playback Control
@@ -111,7 +111,7 @@ All setters can be called while playing — the metronome adapts immediately.
 ```dart
 metronome.setBPM(140);
 metronome.setVolume(80);
-metronome.setTimeSignature(3);
+metronome.setAccentPattern(const [3]);
 metronome.setAudioFile(
   mainPath: 'assets/audio/snare.wav',
   accentedPath: 'assets/audio/claves.wav',
@@ -124,8 +124,8 @@ metronome.setAudioFile(
 | `getBPM()`                                     | `Future<int>`  | Returns current BPM (defaults to 120).                   |
 | `setVolume(int volume)`                        | `Future<void>` | Sets volume (0–100).                                     |
 | `getVolume()`                                  | `Future<int>`  | Returns current volume (defaults to 50).                 |
-| `setTimeSignature(int ts)`                     | `Future<void>` | Sets beats per bar. Restarts playback loop if playing.   |
-| `getTimeSignature()`                           | `Future<int>`  | Returns current time signature.                          |
+| `setAccentPattern(List<int> pattern)`          | `Future<void>` | Sets accent groups. Restarts playback loop if playing.   |
+| `getAccentPattern()`                           | `Future<List<int>>` | Returns current accent pattern (defaults to `[4]`). |
 | `setAudioFile({mainPath, accentedPath})`       | `Future<void>` | Hot-swaps audio files without re-initializing.           |
 
 ### Tick Stream
@@ -182,8 +182,8 @@ Communication between Dart and native code uses:
 
 1. **Init** — Dart loads audio files as raw bytes (`Uint8List`) and sends them to native via the method channel.
 2. **Buffer generation** — The native engine builds a PCM buffer for one full bar:
-   - Beat 1 uses the *accented* sound.
-   - Beats 2..N use the *main* sound.
+   - The first beat of each group in `accentPattern` uses the *accented* sound.
+   - Other beats use the *main* sound.
    - Each beat occupies `sampleRate * 60 / bpm` frames.
 3. **Looping** — The bar buffer is scheduled to loop continuously.
 4. **Tick events** — A platform-specific timer fires at each beat boundary and pushes the beat index back through the `EventChannel`.

@@ -6,14 +6,14 @@ description: >-
   the Dart API surface, platform channels, tick-callback logic, buffer
   generation, or audio session handling. Triggers: metronome, BPM, tick stream,
   AVAudioEngine, AudioTrack, Web Audio API, MethodChannel, EventChannel,
-  time signature, audio buffer, click sound, accented beat.
+  accent pattern, time signature grouping, audio buffer, click sound, accented beat.
 ---
 
 # Metronome Flutter Plugin
 
 Cross-platform Flutter plugin providing a precise, looping metronome with
-configurable BPM, volume, time signature, custom audio sources, and real-time
-tick callbacks.
+configurable BPM, volume, **accent pattern** (list of group sizes per bar),
+custom audio sources, and real-time tick callbacks.
 
 ## Key Concepts
 
@@ -25,8 +25,10 @@ tick callbacks.
 - **Raw-byte audio transfer** — Dart loads WAV files as `Uint8List` and sends
   them to native over the method channel. Native engines never deal with file
   paths.
-- **Bar-buffer looping** — each platform builds a PCM buffer for one full bar
-  (accented beat 1 + normal beats 2..N) and loops it continuously.
+- **Bar-buffer looping** — each platform builds a PCM buffer for one full bar.
+  `accentPattern` is a list of group sizes; the **first beat of each group**
+  uses the accented sample; other beats use the main sample. Total beats per
+  bar = sum(`accentPattern`).
 
 ## Codebase Map
 
@@ -49,7 +51,7 @@ android/src/main/java/com/sumsg/metronome/
 windows/
   metronome_plugin_c_api.cpp      C API entry
   metronome_plugin.cpp            Plugin logic
-  metronome.h                     Header
+  metronome.h / metronome.cpp     WaveOut core
 ```
 
 ## Platform Channels
@@ -67,7 +69,7 @@ Darwin).
 
 | Method             | Arguments                                                        |
 |--------------------|------------------------------------------------------------------|
-| `init`             | `mainFileBytes`, `accentedFileBytes`, `bpm`, `volume`, `enableTickCallback`, `timeSignature`, `sampleRate` |
+| `init`             | `mainFileBytes`, `accentedFileBytes`, `bpm`, `volume`, `enableTickCallback`, `accentPattern` (`List<int>`), `sampleRate` |
 | `play`             | —                                                                |
 | `pause`            | —                                                                |
 | `stop`             | —                                                                |
@@ -75,8 +77,8 @@ Darwin).
 | `getBPM`           | — (returns `int`)                                                |
 | `setVolume`        | `volume` (0.0–1.0 float, Dart converts from 0–100)              |
 | `getVolume`        | — (returns `int` 0–100)                                         |
-| `setTimeSignature` | `timeSignature`                                                  |
-| `getTimeSignature` | — (returns `int`)                                                |
+| `setAccentPattern` | `accentPattern` (`List<int>`)                                    |
+| `getAccentPattern` | — (returns `List<int>`)                                          |
 | `setAudioFile`     | `mainFileBytes`, `accentedFileBytes`                             |
 | `isPlaying`        | — (returns `bool`)                                               |
 | `destroy`          | —                                                                |
@@ -122,13 +124,14 @@ Darwin).
 5. Handle the new method name in each native plugin:
    - `darwin/.../MetronomePlugin.swift` → `handle(_:result:)` switch.
    - `android/.../MetronomePlugin.java` → `onMethodCall()` switch.
+   - `windows/.../metronome_plugin.cpp` → `HandleMethodCall`.
 6. Implement the actual logic in the native engine class.
 
 ### Changing audio processing
 
 - Buffer generation lives in `generateBuffer()` on each platform.
 - Beat length formula: `sampleRate * 60 / bpm` frames.
-- Accented beat is always index 0 within the bar.
+- Accented beats: indices `0`, `g0`, `g0+g1`, … where `g*` are `accentPattern` entries.
 
 ### Modifying the tick callback
 

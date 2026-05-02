@@ -81,15 +81,15 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
         setAccentPattern(call);
         break;
       case "getAccentPattern":
-        if (metronome != null && metronome.accentPattern != null) {
-          List<Integer> list = new ArrayList<>();
-          for (int v : metronome.accentPattern) {
-            list.add(v);
-          }
-          result.success(list);
-        } else {
+        if (metronome == null || metronome.accentPattern == null) {
           result.success(new ArrayList<Integer>());
+          break;
         }
+        List<Integer> patternList = new ArrayList<>();
+        for (int v : metronome.accentPattern) {
+          patternList.add(v);
+        }
+        result.success(patternList);
         break;
       case "setAudioFile":
         setAudioFile(call);

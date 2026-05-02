@@ -17,7 +17,9 @@ class _MyAppState extends State<MyApp> {
   bool isplaying = false;
   int bpm = 120;
   int vol = 50;
-  int timeSignature = 4;
+  List<int> accentPattern = const [4];
+
+  int get _totalBeats => accentPattern.fold(0, (a, b) => a + b);
   String metronomeIcon = 'assets/metronome-left.png';
   String metronomeIconRight = 'assets/metronome-right.png';
   String metronomeIconLeft = 'assets/metronome-left.png';
@@ -41,7 +43,7 @@ class _MyAppState extends State<MyApp> {
       bpm: bpm,
       volume: vol,
       enableTickCallback: true,
-      timeSignature: timeSignature,
+      accentPattern: List<int>.from(accentPattern),
       sampleRate: 44100,
     );
     print("init:${_metronomePlugin.isInitialized}");
@@ -82,13 +84,13 @@ class _MyAppState extends State<MyApp> {
                 height: 100,
                 gaplessPlayback: true,
               ),
-              if (timeSignature > 1)
+              if (_totalBeats > 1)
                 SizedBox(
                   height: 60,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      for (int i = 0; i < timeSignature; i++) _buildCircle(i),
+                      for (int i = 0; i < _totalBeats; i++) _buildCircle(i),
                     ],
                   ),
                 ),
@@ -135,10 +137,13 @@ class _MyAppState extends State<MyApp> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  _buildTimeSignButton('1/4', 1),
-                  _buildTimeSignButton('2/4', 2),
-                  _buildTimeSignButton('3/4', 3),
-                  _buildTimeSignButton('4/4', 4),
+                  _buildTimeSignButton('1/4', const [1]),
+                  _buildTimeSignButton('2/4', const [2]),
+                  _buildTimeSignButton('3/4', const [3]),
+                  _buildTimeSignButton('4/4', const [4]),
+                  _buildTimeSignButton('6/8', const [3, 3]),
+                  _buildTimeSignButton('7/8', const [2, 2, 3]),
+                  _buildTimeSignButton('12/8', const [3, 3, 3, 3]),
                 ],
               ),
               const Text(
@@ -238,16 +243,25 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  Widget _buildTimeSignButton(String text, int ts) {
+  bool _samePattern(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  Widget _buildTimeSignButton(String text, List<int> pattern) {
+    final selected = _samePattern(accentPattern, pattern);
     return ElevatedButton(
       child: Text(
         text,
-        style: TextStyle(color: ts == timeSignature ? Colors.red : null),
+        style: TextStyle(color: selected ? Colors.red : null),
       ),
       onPressed: () {
         currentTick = 0;
-        timeSignature = ts;
-        _metronomePlugin.setTimeSignature(ts);
+        accentPattern = List<int>.from(pattern);
+        _metronomePlugin.setAccentPattern(List<int>.from(accentPattern));
         setState(() {});
       },
     );
