@@ -53,6 +53,8 @@ await metronome.init(
   enableTickCallback: true,
   accentPattern: const [4],
   sampleRate: 44100,
+  // iOS only. Keep true unless the host app manages AVAudioSession.
+  manageAudioSession: true,
 );
 
 await metronome.play();
@@ -76,7 +78,24 @@ Initializes the metronome engine. Must be called before any other method.
 | `accentPattern`      | `List<int>` | `[4]` | Group sizes in one bar. The first beat of each group uses the accented sound. Sum = beats per bar. Example: `[3, 3]` is 6/8 compound (A b b A b b); `[2, 2, 3]` is a common 7/8 grouping. |
 | `sampleRate`         | `int`    | `44100` | Audio sample rate in Hz.                                 |
 
-### Playback Control
+### iOS audio session management
+
+`manageAudioSession` controls whether the plugin configures and activates the shared `AVAudioSession` during initialization.
+
+The default value is `true`, which preserves the existing behavior. The plugin uses the `playAndRecord` category, `videoRecording` mode, and activates the audio session.
+
+Set it to `false` when the host application already manages `AVAudioSession`, for example through the Flutter [`audio_session`](https://pub.dev/packages/audio_session) package. The host application must configure and activate its audio session before starting audio playback:
+
+```dart
+await metronome.init(
+  'assets/audio/snare.wav',
+  manageAudioSession: false,
+);
+```
+
+This parameter only affects iOS. It does not change audio session behavior on Android, macOS, Windows, or Web.
+
+### Play
 
 ```dart
 metronome.play();

@@ -159,6 +159,10 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.17.0"
+      sha256: "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.18.0"
   metronome:
     dependency: "direct main"
     description:
@@ -166,6 +170,7 @@ packages:
       relative: true
     source: path
     version: "2.0.7"
+    version: "2.0.12"
   path:
     dependency: transitive
     description:
@@ -259,6 +264,10 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.10"
+      sha256: "949a932224383300f01be9221c39180316445ecb8e7547f70a41a35bf421fb9e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.11"
   vector_math:
     dependency: transitive
     description:
@@ -293,4 +302,5 @@ packages:
     version: "3.1.0"
 sdks:
   dart: ">=3.9.0-0 <4.0.0"
+  dart: ">=3.10.0-0 <4.0.0"
   flutter: ">=3.18.0-18.0.pre.54"

@@ -70,6 +70,7 @@ class MetronomeWeb extends MetronomePlatform {
     bool enableTickCallback = false,
     List<int> accentPattern = const [4],
     int sampleRate = 44100,
+    bool manageAudioSession = true,
   }) async {
     _validateAccentPattern(accentPattern);
     _sampleRate = sampleRate;

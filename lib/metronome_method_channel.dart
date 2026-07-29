@@ -61,6 +61,7 @@ class MethodChannelMetronome extends MetronomePlatform {
     bool enableTickCallback = false,
     List<int> accentPattern = const [4],
     int sampleRate = 44100,
+    bool manageAudioSession = true,
   }) async {
     if (mainPath == '') {
       throw Exception('Main path cannot be empty');
@@ -89,6 +90,7 @@ class MethodChannelMetronome extends MetronomePlatform {
         'enableTickCallback': enableTickCallback,
         'accentPattern': accentPattern,
         'sampleRate': sampleRate,
+        'manageAudioSession': manageAudioSession,
       });
     } catch (e) {
       if (kDebugMode) {

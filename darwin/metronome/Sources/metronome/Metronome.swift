@@ -29,9 +29,17 @@ class Metronome {
         return false
     }
     private var timer: DispatchSourceTimer?
-    private var startTime: AVAudioTime?
+    private let timerQueue = DispatchQueue(label: "com.metronome.beat-timer", qos: .background)
     /// Initialize the metronome with the main and accented audio files.
-    init(mainFileBytes: Data, accentedFileBytes: Data, bpm: Int, accentPattern: [Int], volume: Float, sampleRate: Int) {
+    init(
+        mainFileBytes: Data, 
+        accentedFileBytes: Data, 
+        bpm: Int, 
+        accentPattern: [Int], 
+        volume: Float, 
+        sampleRate: Int, 
+        manageAudioSession: Bool = true
+    ) {
         self.sampleRate = sampleRate
         self.accentPattern = accentPattern.isEmpty ? [4] : accentPattern
         audioBpm = bpm
@@ -44,17 +52,19 @@ class Metronome {
             audioFileAccented = try! AVAudioFile(fromData: accentedFileBytes)
         }
 #if os(iOS)
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(
-                .playAndRecord,
-                mode: .videoRecording,
-                options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .mixWithOthers]
-            )
-            
-            try audioSession.setActive(true)
-        } catch {
-            print("Failed to set audio session category: \(error)")
+        if manageAudioSession {
+            do {
+                let audioSession = AVAudioSession.sharedInstance()
+                try audioSession.setCategory(
+                    .playAndRecord,
+                    mode: .videoRecording,
+                    options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .mixWithOthers]
+                )
+
+                try audioSession.setActive(true)
+            } catch {
+                print("Failed to set audio session category: \(error)")
+            }
         }
 #endif
         // Initialize audio engine and player node
@@ -81,7 +91,9 @@ class Metronome {
 #endif
     }
     private func reconnectPlayerNode() {
-        audioEngine.disconnectNodeOutput(audioPlayerNode)
+        if !audioEngine.outputConnectionPoints(for: audioPlayerNode, outputBus: 0).isEmpty {
+            audioEngine.disconnectNodeOutput(audioPlayerNode)
+        }
         audioEngine.connect(audioPlayerNode, to: mixerNode, format: audioFileMain.processingFormat)
     }
 
@@ -105,12 +117,13 @@ class Metronome {
     
     /// Stop the metronome.
     func stop() {
+        // Stop the beat callback before operating on the player node.
+        stopBeatTimer()
         if audioBuffer != nil {
             audioBuffer?.frameLength = 0
             self.audioPlayerNode.scheduleBuffer(audioBuffer!, at: nil, options: .interruptsAtLoop, completionHandler: nil)
         }
         audioPlayerNode.stop()
-        stopBeatTimer()
     }
     
     /// Set the BPM of the metronome.
@@ -195,13 +208,9 @@ class Metronome {
         if wasPlaying {
             self.stop()
         }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.audioPlayerNode.stop()
-            self.audioEngine.stop()
-            self.audioEngine.reset()
 
-            self.reconnectPlayerNode()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.audioEngine.stop()
 
             do {
                 try self.audioEngine.start()
@@ -260,7 +269,6 @@ class Metronome {
             bufferBar.floatChannelData!.pointee.update(from: barArray, count: channelCount * Int(bufferBar.frameLength))
         }
         //
-        self.startTime = self.audioPlayerNode.lastRenderTime
         self.audioPlayerNode.scheduleBuffer(bufferBar, at: nil, options: .loops,completionHandler: nil)
         self.audioPlayerNode.play()
         startBeatTimer()
@@ -277,14 +285,15 @@ class Metronome {
     private func startBeatTimer() {
         if self.eventTick == nil {return}
         let beatDuration = 60.0 / Double(audioBpm)
+        let startUptime = DispatchTime.now().uptimeNanoseconds
         timer?.cancel()
-        timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
+        timer = DispatchSource.makeTimerSource(queue: timerQueue)
         timer?.schedule(deadline: .now(), repeating: beatDuration, leeway: .milliseconds(10))
         timer?.setEventHandler { [weak self] in
             guard let self = self else { return }
-            guard let startTime = self.startTime,
-                  let currentTime = self.audioPlayerNode.lastRenderTime,
-                  let elapsedTime = self.getElapsedTime(from: startTime, to: currentTime) else { return }
+            // Use a monotonic clock to decouple the beat callback from the AVAudioNode lifecycle.
+            let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startUptime
+            let elapsedTime = Double(elapsedNanoseconds) / 1_000_000_000
 
             let currentBeat = Int(elapsedTime / beatDuration)
             let tb = self.totalBeats
@@ -297,21 +306,18 @@ class Metronome {
 
         timer?.resume()
     }
-    
-    private func getElapsedTime(from startTime: AVAudioTime, to currentTime: AVAudioTime) -> TimeInterval? {
-//        guard let sampleRate = startTime.sampleRate as Double? else { return nil }
-        let elapsedSamples = currentTime.sampleTime - startTime.sampleTime
-        return Double(elapsedSamples) / Double(self.sampleRate)
-    }
 
     func destroy() {
-        audioPlayerNode.reset()
-        audioPlayerNode.stop()
-        audioEngine.reset()
-        audioEngine.stop()
-        audioEngine.detach(audioPlayerNode)
-        audioBuffer = nil
+        // Stop the beat callback before operating on the player node.
         stopBeatTimer()
+        audioPlayerNode.stop()
+        audioPlayerNode.reset()
+        audioEngine.stop()
+        audioEngine.reset()
+        if audioEngine.attachedNodes.contains(audioPlayerNode) {
+            audioEngine.detach(audioPlayerNode)
+        }
+        audioBuffer = nil
     }
 }
 extension AVAudioFile {

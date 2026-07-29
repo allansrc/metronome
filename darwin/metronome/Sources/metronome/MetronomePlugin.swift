@@ -110,7 +110,16 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
         let bpm: Int = (attributes?["bpm"] as? Int) ?? 120
         let volume: Float = (attributes?["volume"] as? Float) ?? 0.5
         let sampleRate: Int = (attributes?["sampleRate"] as? Int) ?? 44100
-        metronome =  Metronome( mainFileBytes:mainBytes,accentedFileBytes: accentedBytes,bpm:bpm,accentPattern:accentPattern,volume:volume,sampleRate:sampleRate)
+        let manageAudioSession: Bool = (attributes?["manageAudioSession"] as? Bool) ?? true
+        metronome =  Metronome(
+            mainFileBytes:mainBytes,
+            accentedFileBytes: accentedBytes,
+            bpm:bpm,
+            accentPattern:accentPattern,
+            volume:volume,
+            sampleRate:sampleRate,
+            manageAudioSession: manageAudioSession
+        )
         if(enableTickCallback){
             metronome?.enableTickCallback(_eventTickSink: eventTickListener);
         }

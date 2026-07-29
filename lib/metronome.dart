@@ -29,6 +29,8 @@ class Metronome {
   /// @param volume: the volume of the metronome, default `50`%
   /// @param accentPattern: group sizes per bar (first beat of each group is accented), default `[4]`
   /// @param sampleRate: the sampleRate of the metronome, default `44100`
+  /// @param manageAudioSession: whether the plugin configures and activates AVAudioSession on iOS, default `true`.
+  /// Set it to `false` when the host application manages the shared audio session. Ignored on other platforms.
   /// ```
   Future<void> init(
     String mainPath, {
@@ -38,6 +40,7 @@ class Metronome {
     bool enableTickCallback = false,
     List<int> accentPattern = const [4],
     int sampleRate = 44100,
+    bool manageAudioSession = true,
   }) async {
     try {
       MetronomePlatform.instance.init(
@@ -48,6 +51,7 @@ class Metronome {
         enableTickCallback: enableTickCallback,
         accentPattern: accentPattern,
         sampleRate: sampleRate,
+        manageAudioSession: manageAudioSession,
       );
       _initialized = true;
       return;
@@ -122,7 +126,4 @@ class Metronome {
     _initialized = false;
     return MetronomePlatform.instance.destroy();
   }
-
-  @Deprecated('use tickStream instead')
-  void onListenTick(onEvent) {}
 }
