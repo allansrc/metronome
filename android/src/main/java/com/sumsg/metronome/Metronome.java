@@ -20,28 +20,40 @@ public class Metronome {
     private final AudioTrack audioTrack;
     private short[] mainSound;
     private short[] accentedSound;
+    private short[] subdivisionSound;
     private short[] audioBuffer;
     private final int SAMPLE_RATE;
     public int audioBpm;
     /// Group sizes per bar; first beat of each group uses the accented sound.
     public int[] accentPattern;
+    /// Clicks per beat (1=quarter, 2=8th, 3=triplet, 6=sextuplet).
+    public int subdivision;
+    /// Volume multiplier for subdivision clicks (0.0-1.0).
+    public float subdivisionVolume;
     public float audioVolume;
     private boolean updated = false;
     private EventChannel.EventSink eventTickSink;
     private int currentTick = 0;
 
     @SuppressWarnings("deprecation")
-    public Metronome(byte[] mainFileBytes, byte[] accentedFileBytes, int bpm, int[] accentPattern, float volume,
+    public Metronome(byte[] mainFileBytes, byte[] accentedFileBytes, byte[] subdivisionFileBytes, int bpm, int[] accentPattern, int subdivision, float subdivisionVolume, float volume,
             int sampleRate) {
         SAMPLE_RATE = sampleRate;
         audioBpm = bpm;
         audioVolume = volume;
         this.accentPattern = normalizeAccentPattern(accentPattern);
+        this.subdivision = Math.max(1, subdivision);
+        this.subdivisionVolume = subdivisionVolume;
         mainSound = byteArrayToShortArray(mainFileBytes);
         if (accentedFileBytes.length == 0) {
             accentedSound = mainSound;
         } else {
             accentedSound = byteArrayToShortArray(accentedFileBytes);
+        }
+        if (subdivisionFileBytes.length == 0) {
+            subdivisionSound = mainSound;
+        } else {
+            subdivisionSound = byteArrayToShortArray(subdivisionFileBytes);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             AudioFormat audioFormat = new AudioFormat.Builder()
@@ -83,6 +95,10 @@ public class Metronome {
             sum += g;
         }
         return sum;
+    }
+
+    private int getTotalSubTicks() {
+        return getTotalBeats() * subdivision;
     }
 
     private boolean isAccentBeat(int index) {
@@ -138,6 +154,25 @@ public class Metronome {
         }
     }
 
+    public void setSubdivision(int newSubdivision) {
+        int normalized = Math.max(1, newSubdivision);
+        if (subdivision != normalized) {
+            subdivision = normalized;
+            if (isPlaying()) {
+                pause();
+                play();
+            }
+        }
+    }
+
+    public void setSubdivisionVolume(float newSubdivisionVolume) {
+        subdivisionVolume = newSubdivisionVolume;
+        if (isPlaying()) {
+            pause();
+            play();
+        }
+    }
+
     public void setAudioFile(byte[] mainFileBytes, byte[] accentedFileBytes) {
         if (mainFileBytes.length > 0) {
             mainSound = byteArrayToShortArray(mainFileBytes);
@@ -182,21 +217,29 @@ public class Metronome {
 
     private short[] generateBuffer() {
         currentTick = 0;
-        int framesPerBeat = (int) (SAMPLE_RATE * 60 / (float) audioBpm);
-        short[] bufferBar;
-        int beats = getTotalBeats();
-        if (beats < 2) {
-            bufferBar = new short[framesPerBeat];
-            int soundLength = Math.min(framesPerBeat, mainSound.length);
-            System.arraycopy(mainSound, 0, bufferBar, 0, soundLength);
-        } else {
-            int bufferSize = framesPerBeat * beats;
-            bufferBar = new short[bufferSize];
-            for (int i = 0; i < beats; i++) {
-                short[] sound = isAccentBeat(i) ? accentedSound : mainSound;
-                int soundLength = Math.min(framesPerBeat, sound.length);
-                System.arraycopy(sound, 0, bufferBar, i * framesPerBeat, soundLength);
+        int framesPerSubBeat = (int) (SAMPLE_RATE * 60 / ((float) audioBpm * subdivision));
+        int totalSlots = getTotalSubTicks();
+        totalSlots = Math.max(1, totalSlots);
+        int bufferSize = framesPerSubBeat * totalSlots;
+        short[] bufferBar = new short[bufferSize];
+
+        // Pre-scale subdivision sound
+        short[] scaledSubdivision = new short[subdivisionSound.length];
+        for (int j = 0; j < subdivisionSound.length; j++) {
+            scaledSubdivision[j] = (short) (subdivisionSound[j] * subdivisionVolume);
+        }
+
+        for (int tick = 0; tick < totalSlots; tick++) {
+            boolean isDownbeat = (tick % subdivision) == 0;
+            int beatIndex = tick / subdivision;
+            short[] sound;
+            if (isDownbeat) {
+                sound = isAccentBeat(beatIndex) ? accentedSound : mainSound;
+            } else {
+                sound = scaledSubdivision;
             }
+            int soundLength = Math.min(framesPerSubBeat, sound.length);
+            System.arraycopy(sound, 0, bufferBar, tick * framesPerSubBeat, soundLength);
         }
         updated = false;
         return bufferBar;
@@ -205,8 +248,8 @@ public class Metronome {
     void onTick() {
         if (eventTickSink == null)
             return;
-        int framesPerBeat = (int) ((SAMPLE_RATE * 60.0) / audioBpm);
-        audioTrack.setPositionNotificationPeriod(framesPerBeat);
+        int framesPerSubBeat = (int) ((SAMPLE_RATE * 60.0) / (audioBpm * subdivision));
+        audioTrack.setPositionNotificationPeriod(framesPerSubBeat);
         audioTrack.setPlaybackPositionUpdateListener(new AudioTrack.OnPlaybackPositionUpdateListener() {
             @Override
             public void onMarkerReached(AudioTrack track) {
@@ -215,12 +258,12 @@ public class Metronome {
             @Override
             public void onPeriodicNotification(AudioTrack track) {
                 if (!updated) {
-                    int beats = getTotalBeats();
-                    if (beats < 2) {
+                    int totalSlots = getTotalSubTicks();
+                    if (totalSlots < 2) {
                         currentTick = 0;
                     } else {
                         currentTick++;
-                        if (currentTick >= beats)
+                        if (currentTick >= totalSlots)
                             currentTick = 0;
                     }
                     eventTickSink.success(currentTick);

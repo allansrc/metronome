@@ -21,7 +21,8 @@ class Metronome
 public:
     Metronome(const std::vector<uint8_t> &mainFileBytes,
               const std::vector<uint8_t> &accentedFileBytes,
-              int bpm, const std::vector<int> &accentPattern, double volume, int sampleRate);
+              const std::vector<uint8_t> &subdivisionFileBytes,
+              int bpm, const std::vector<int> &accentPattern, int subdivision, double subdivisionVolume, double volume, int sampleRate);
     ~Metronome();
 
     void Play();
@@ -29,6 +30,8 @@ public:
     void Stop();
     void SetBPM(int bpm);
     void SetAccentPattern(const std::vector<int> &accentPattern);
+    void SetSubdivision(int subdivision);
+    void SetSubdivisionVolume(double subdivisionVolume);
     void SetVolume(double volume);
     void SetAudioFile(const std::vector<uint8_t> &mainFileBytes, const std::vector<uint8_t> &accentedSound);
     void EnableTickCallback(std::shared_ptr<flutter::EventSink<flutter::EncodableValue>> eventSink);
@@ -37,6 +40,8 @@ public:
     int Metronome::GetVolume() const;
     int audioBpm = 120;
     std::vector<int> accentPattern = {4};
+    int subdivision = 1;
+    double subdivisionVolume = 0.5;
 
 private:
     static std::vector<int> NormalizeAccentPattern(const std::vector<int> &pattern);
@@ -62,6 +67,7 @@ private:
     std::vector<int16_t> audioBuffer;
     std::vector<int16_t> mainSound;
     std::vector<int16_t> accentedSound;
+    std::vector<int16_t> subdivisionSound;
     int sampleRate = 44100;
     int beatLength = 0;
     double audioVolume = 1.0;

@@ -91,6 +91,18 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
         }
         result.success(patternList);
         break;
+      case "setSubdivision":
+        setSubdivision(call);
+        break;
+      case "getSubdivision":
+        result.success(metronome != null ? metronome.subdivision : 1);
+        break;
+      case "setSubdivisionVolume":
+        setSubdivisionVolume(call);
+        break;
+      case "getSubdivisionVolume":
+        result.success(metronome != null ? (int)(metronome.subdivisionVolume * 100) : 50);
+        break;
       case "setAudioFile":
         setAudioFile(call);
         break;
@@ -118,6 +130,10 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     if (accentedFileBytes == null) {
       accentedFileBytes = new byte[0];
     }
+    byte[] subdivisionFileBytes = call.argument("subdivisionFileBytes");
+    if (subdivisionFileBytes == null) {
+      subdivisionFileBytes = new byte[0];
+    }
     boolean enableTickCallback = Boolean.TRUE.equals(call.argument("enableTickCallback"));
 
     int[] accentPattern = readAccentPattern(call);
@@ -128,10 +144,16 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     Double volumeValue = call.argument("volume");
     float volume = (volumeValue != null) ? volumeValue.floatValue() : 0.5F;
 
+    Integer subdivisionValue = call.argument("subdivision");
+    int subdivision = (subdivisionValue != null) ? subdivisionValue : 1;
+
+    Double subdivisionVolumeValue = call.argument("subdivisionVolume");
+    float subdivisionVolume = (subdivisionVolumeValue != null) ? subdivisionVolumeValue.floatValue() : 0.5F;
+
     Integer sampleRateValue = call.argument("sampleRate");
     int sampleRate = (sampleRateValue != null) ? sampleRateValue : 44100;
 
-    metronome = new Metronome(mainFileBytes, accentedFileBytes, bpm, accentPattern, volume, sampleRate);
+    metronome = new Metronome(mainFileBytes, accentedFileBytes, subdivisionFileBytes, bpm, accentPattern, subdivision, subdivisionVolume, volume, sampleRate);
 
     if (enableTickCallback && eventTickSink != null) {
       metronome.enableTickCallback(eventTickSink);
@@ -176,6 +198,24 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
   private void setAccentPattern(@NonNull MethodCall call) {
     if (metronome != null) {
       metronome.setAccentPattern(readAccentPattern(call));
+    }
+  }
+
+  private void setSubdivision(@NonNull MethodCall call) {
+    if (metronome != null) {
+      Integer _subdivision = call.argument("subdivision");
+      if (_subdivision != null) {
+        metronome.setSubdivision(_subdivision);
+      }
+    }
+  }
+
+  private void setSubdivisionVolume(@NonNull MethodCall call) {
+    if (metronome != null) {
+      Double _subdivisionVolume = call.argument("subdivisionVolume");
+      if (_subdivisionVolume != null) {
+        metronome.setSubdivisionVolume(_subdivisionVolume.floatValue());
+      }
     }
   }
 

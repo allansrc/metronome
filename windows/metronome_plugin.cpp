@@ -103,13 +103,29 @@ namespace metronome
       auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
       std::vector<uint8_t> mainFileBytes = std::get<std::vector<uint8_t>>(arguments[flutter::EncodableValue("mainFileBytes")]);
       std::vector<uint8_t> accentedFileBytes = std::get<std::vector<uint8_t>>(arguments[flutter::EncodableValue("accentedFileBytes")]);
+      std::vector<uint8_t> subdivisionFileBytes;
+      auto subdivIt = arguments.find(flutter::EncodableValue("subdivisionFileBytes"));
+      if (subdivIt != arguments.end()) {
+        subdivisionFileBytes = std::get<std::vector<uint8_t>>(subdivIt->second);
+      }
       std::vector<int> accentPattern = ReadAccentPattern(arguments);
       int bpm = std::get<int>(arguments[flutter::EncodableValue("bpm")]);
       double volume = std::get<double>(arguments[flutter::EncodableValue("volume")]);
+      int subdivision = 1;
+      auto subdivisionIt = arguments.find(flutter::EncodableValue("subdivision"));
+      if (subdivisionIt != arguments.end()) {
+        subdivision = EncodableToInt(subdivisionIt->second);
+        if (subdivision < 1) subdivision = 1;
+      }
+      double subdivisionVolume = 0.5;
+      auto subdivVolIt = arguments.find(flutter::EncodableValue("subdivisionVolume"));
+      if (subdivVolIt != arguments.end()) {
+        subdivisionVolume = std::get<double>(subdivVolIt->second);
+      }
       int sampleRate = std::get<int>(arguments[flutter::EncodableValue("sampleRate")]);
       bool enableTickCallback = std::get<bool>(arguments[flutter::EncodableValue("enableTickCallback")]);
 
-      metronome = std::make_unique<Metronome>(mainFileBytes, accentedFileBytes, bpm, accentPattern, volume, sampleRate);
+      metronome = std::make_unique<Metronome>(mainFileBytes, accentedFileBytes, subdivisionFileBytes, bpm, accentPattern, subdivision, subdivisionVolume, volume, sampleRate);
       if (enableTickCallback && eventSink)
       {
         metronome->EnableTickCallback(eventSink);
@@ -153,6 +169,28 @@ namespace metronome
     else if (method == "getAccentPattern")
     {
       result->Success(flutter::EncodableValue(AccentPatternToEncodable(metronome->accentPattern)));
+    }
+    else if (method == "setSubdivision")
+    {
+      auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
+      int subdivision = EncodableToInt(arguments[flutter::EncodableValue("subdivision")]);
+      metronome->SetSubdivision(subdivision);
+      result->Success(true);
+    }
+    else if (method == "getSubdivision")
+    {
+      result->Success(flutter::EncodableValue(metronome->subdivision));
+    }
+    else if (method == "setSubdivisionVolume")
+    {
+      auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
+      double subdivisionVolume = std::get<double>(arguments[flutter::EncodableValue("subdivisionVolume")]);
+      metronome->SetSubdivisionVolume(subdivisionVolume);
+      result->Success(true);
+    }
+    else if (method == "getSubdivisionVolume")
+    {
+      result->Success(flutter::EncodableValue(static_cast<int>(metronome->subdivisionVolume * 100)));
     }
     else if (method == "setVolume")
     {

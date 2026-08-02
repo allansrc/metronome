@@ -31,10 +31,13 @@ abstract class MetronomePlatform extends PlatformInterface {
   Future<void> init(
     String mainPath, {
     String accentedPath = '',
+    String subdivisionPath = '',
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
     List<int> accentPattern = const [4],
+    int subdivision = 1,
+    int subdivisionVolume = 50,
     int sampleRate = 44100,
   }) {
     throw UnimplementedError('init() has not been implemented.');
@@ -89,6 +92,22 @@ abstract class MetronomePlatform extends PlatformInterface {
 
   Future<void> destroy() {
     throw UnimplementedError('destroy() has not been implemented.');
+  }
+
+  Future<void> setSubdivision(int subdivision) {
+    throw UnimplementedError('setSubdivision() has not been implemented.');
+  }
+
+  Future<int?> getSubdivision() {
+    throw UnimplementedError('getSubdivision() has not been implemented.');
+  }
+
+  Future<void> setSubdivisionVolume(int subdivisionVolume) {
+    throw UnimplementedError('setSubdivisionVolume() has not been implemented.');
+  }
+
+  Future<int?> getSubdivisionVolume() {
+    throw UnimplementedError('getSubdivisionVolume() has not been implemented.');
   }
 
   Stream<dynamic> onListenTick(onEvent) {

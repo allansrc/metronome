@@ -19,8 +19,10 @@ class MetronomeWeb extends MetronomePlatform {
   web.AudioContext? _audioContext;
   web.AudioBuffer? _mainSoundBuffer;
   web.AudioBuffer? _accentedSoundBuffer;
+  web.AudioBuffer? _subdivisionSoundBuffer;
   web.AudioBuffer? _mainSoundBufferTemp;
   web.AudioBuffer? _accentedSoundBufferTemp;
+  web.AudioBuffer? _subdivisionSoundBufferTemp;
   web.AudioBufferSourceNode? _currentSource;
   web.ScriptProcessorNode? _scriptNode;
   web.GainNode? gainNode;
@@ -29,6 +31,8 @@ class MetronomeWeb extends MetronomePlatform {
   int _currentTick = 0;
   int _bpm = 120;
   List<int> _accentPattern = const [4];
+  int _subdivision = 1;
+  double _subdivisionVolume = 0.5;
   double _volume = 1.0;
   bool _enableTickCallback = false;
   int _sampleRate = 44100;
@@ -40,6 +44,8 @@ class MetronomeWeb extends MetronomePlatform {
 
   int get _totalBeats =>
       _accentPattern.fold<int>(0, (sum, g) => sum + g);
+
+  int get _totalSubTicks => _totalBeats * _subdivision;
 
   bool _isAccentBeat(int tick) {
     int pos = 0;
@@ -65,10 +71,13 @@ class MetronomeWeb extends MetronomePlatform {
   Future<void> init(
     String mainPath, {
     String accentedPath = '',
+    String subdivisionPath = '',
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
     List<int> accentPattern = const [4],
+    int subdivision = 1,
+    int subdivisionVolume = 50,
     int sampleRate = 44100,
   }) async {
     _validateAccentPattern(accentPattern);
@@ -86,8 +95,15 @@ class MetronomeWeb extends MetronomePlatform {
     } else {
       _accentedSoundBuffer = await _bytesToAudioBuffer(accentedPath);
     }
+    if (subdivisionPath == '') {
+      _subdivisionSoundBuffer = _mainSoundBuffer;
+    } else {
+      _subdivisionSoundBuffer = await _bytesToAudioBuffer(subdivisionPath);
+    }
     _bpm = bpm;
     _accentPattern = List<int>.from(accentPattern);
+    _subdivision = subdivision < 1 ? 1 : subdivision;
+    _subdivisionVolume = subdivisionVolume / 100;
     _volume = volume / 100;
     _enableTickCallback = enableTickCallback;
   }
@@ -160,6 +176,28 @@ class MetronomeWeb extends MetronomePlatform {
   }
 
   @override
+  Future<void> setSubdivision(int subdivision) async {
+    if (subdivision >= 1) {
+      _subdivision = subdivision;
+    }
+  }
+
+  @override
+  Future<int?> getSubdivision() async {
+    return _subdivision;
+  }
+
+  @override
+  Future<void> setSubdivisionVolume(int subdivisionVolume) async {
+    _subdivisionVolume = subdivisionVolume / 100;
+  }
+
+  @override
+  Future<int?> getSubdivisionVolume() async {
+    return (_subdivisionVolume * 100).round();
+  }
+
+  @override
   Future<void> setAudioFile({
     String mainPath = '',
     String accentedPath = '',
@@ -178,6 +216,7 @@ class MetronomeWeb extends MetronomePlatform {
     _tickController.close();
     _mainSoundBuffer = null;
     _accentedSoundBuffer = null;
+    _subdivisionSoundBuffer = null;
   }
 
   void startScheduler() {
@@ -187,9 +226,10 @@ class MetronomeWeb extends MetronomePlatform {
 
   void _schedule() {
     web.window.clearTimeout(_scheduleTimer);
+    final subBeatDuration = 60.0 / (_bpm * _subdivision);
     while (_nextBeatTime < _audioContext!.currentTime + _lookahead) {
       _scheduleBeat(_nextBeatTime);
-      _nextBeatTime += 60.0 / _bpm;
+      _nextBeatTime += subBeatDuration;
     }
     _scheduleTimer = web.window.setTimeout(
       _schedule.toJS,
@@ -198,12 +238,24 @@ class MetronomeWeb extends MetronomePlatform {
   }
 
   void _scheduleBeat(double time) {
-    final isAccented = _isAccentBeat(_currentTick);
-    final buffer = isAccented ? _accentedSoundBuffer : _mainSoundBuffer;
+    final isDownbeat = (_currentTick % _subdivision) == 0;
+    final beatIndex = _currentTick ~/ _subdivision;
+    final isAccented = isDownbeat && _isAccentBeat(beatIndex);
+
+    web.AudioBuffer? buffer;
+    double vol;
+    if (isDownbeat) {
+      buffer = isAccented ? _accentedSoundBuffer : _mainSoundBuffer;
+      vol = _volume;
+    } else {
+      buffer = _subdivisionSoundBuffer ?? _mainSoundBuffer;
+      vol = _volume * _subdivisionVolume;
+    }
+
     final source = _audioContext!.createBufferSource();
     source.buffer = buffer;
     final gainNode = _audioContext!.createGain();
-    gainNode.gain.value = _volume;
+    gainNode.gain.value = vol;
     source.connect(gainNode);
     gainNode.connect(_audioContext!.destination);
     source.start(time);
@@ -216,11 +268,15 @@ class MetronomeWeb extends MetronomePlatform {
         _accentedSoundBuffer = _accentedSoundBufferTemp;
         _accentedSoundBufferTemp = null;
       }
+      if (_subdivisionSoundBufferTemp != null) {
+        _subdivisionSoundBuffer = _subdivisionSoundBufferTemp;
+        _subdivisionSoundBufferTemp = null;
+      }
       if (_enableTickCallback) {
         tickController.add(_currentTick);
       }
-      final tb = _totalBeats;
-      _currentTick = tb < 1 ? 0 : (_currentTick + 1) % tb;
+      final ts = _totalSubTicks;
+      _currentTick = ts < 1 ? 0 : (_currentTick + 1) % ts;
     });
   }
 

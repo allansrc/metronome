@@ -9,15 +9,24 @@ class Metronome {
     //
     private var audioFileMain: AVAudioFile
     private var audioFileAccented: AVAudioFile
+    private var audioFileSubdivision: AVAudioFile
     public var audioBpm: Int = 120
     public var audioVolume: Float = 0.5
     /// Group sizes per bar; first beat of each group uses the accented sound.
     public var accentPattern: [Int] = [4]
+    /// Clicks per beat (1=quarter, 2=8th, 3=triplet, 6=sextuplet).
+    public var subdivision: Int = 1
+    /// Volume multiplier for subdivision clicks (0.0–1.0).
+    public var subdivisionVolume: Float = 0.5
 
     private var sampleRate: Int = 44100
 
     private var totalBeats: Int {
         accentPattern.reduce(0, +)
+    }
+
+    private var totalSubTicks: Int {
+        totalBeats * subdivision
     }
 
     private func isAccentBeat(_ index: Int) -> Bool {
@@ -31,9 +40,11 @@ class Metronome {
     private var timer: DispatchSourceTimer?
     private var startTime: AVAudioTime?
     /// Initialize the metronome with the main and accented audio files.
-    init(mainFileBytes: Data, accentedFileBytes: Data, bpm: Int, accentPattern: [Int], volume: Float, sampleRate: Int) {
+    init(mainFileBytes: Data, accentedFileBytes: Data, subdivisionFileBytes: Data, bpm: Int, accentPattern: [Int], subdivision: Int, subdivisionVolume: Float, volume: Float, sampleRate: Int) {
         self.sampleRate = sampleRate
         self.accentPattern = accentPattern.isEmpty ? [4] : accentPattern
+        self.subdivision = max(1, subdivision)
+        self.subdivisionVolume = subdivisionVolume
         audioBpm = bpm
         audioVolume = volume
         // Initialize audio files
@@ -42,6 +53,11 @@ class Metronome {
             audioFileAccented = audioFileMain
         }else{
             audioFileAccented = try! AVAudioFile(fromData: accentedFileBytes)
+        }
+        if subdivisionFileBytes.isEmpty {
+            audioFileSubdivision = audioFileMain
+        } else {
+            audioFileSubdivision = try! AVAudioFile(fromData: subdivisionFileBytes)
         }
 #if os(iOS)
         do {
@@ -133,6 +149,23 @@ class Metronome {
             }
         }
     }
+    func setSubdivision(subdivision newValue: Int) {
+        let normalized = max(1, newValue)
+        if subdivision != normalized {
+            subdivision = normalized
+            if isPlaying {
+                pause()
+                play()
+            }
+        }
+    }
+    func setSubdivisionVolume(subdivisionVolume newValue: Float) {
+        subdivisionVolume = newValue
+        if isPlaying {
+            pause()
+            play()
+        }
+    }
     
     func setAudioFile(mainFileBytes: Data, accentedFileBytes: Data) {
         if mainFileBytes.isEmpty && accentedFileBytes.isEmpty { return }
@@ -215,50 +248,56 @@ class Metronome {
         }
     }
 #endif
-    /// Generate buffer with accents based on time signature
+    /// Generate buffer with accents and subdivisions
     private func generateBuffer() -> AVAudioPCMBuffer {
         audioFileMain.framePosition = 0
         audioFileAccented.framePosition = 0
+        audioFileSubdivision.framePosition = 0
 
-        let beatLength = AVAudioFrameCount(Double(self.sampleRate) * 60 / Double(self.audioBpm))
-        // let beatLength = AVAudioFrameCount(audioFileMain.processingFormat.sampleRate * 60 / Double(self.audioBpm))
-        let bufferMainClick = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: beatLength)!
+        let subBeatLength = AVAudioFrameCount(Double(self.sampleRate) * 60 / (Double(self.audioBpm) * Double(self.subdivision)))
+        let channelCount = Int(audioFileMain.processingFormat.channelCount)
+
+        // Read main click
+        let bufferMainClick = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: subBeatLength)!
         try! audioFileMain.read(into: bufferMainClick)
-        bufferMainClick.frameLength = beatLength
+        bufferMainClick.frameLength = subBeatLength
+        let mainClickArray = Array(UnsafeBufferPointer(start: bufferMainClick.floatChannelData![0], count: channelCount * Int(subBeatLength)))
 
-        let bufferBar: AVAudioPCMBuffer
-        let beats = totalBeats
-        if beats < 2 {
-            bufferBar = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: beatLength)!
-            bufferBar.frameLength = beatLength
+        // Read accented click
+        let bufferAccentedClick = AVAudioPCMBuffer(pcmFormat: audioFileAccented.processingFormat, frameCapacity: subBeatLength)!
+        try! audioFileAccented.read(into: bufferAccentedClick)
+        bufferAccentedClick.frameLength = subBeatLength
+        let accentedClickArray = Array(UnsafeBufferPointer(start: bufferAccentedClick.floatChannelData![0], count: channelCount * Int(subBeatLength)))
 
-            let channelCount = Int(audioFileMain.processingFormat.channelCount)
-            let mainClickArray = Array(UnsafeBufferPointer(start: bufferMainClick.floatChannelData![0], count: channelCount * Int(beatLength)))
+        // Read subdivision click
+        let bufferSubdivisionClick = AVAudioPCMBuffer(pcmFormat: audioFileSubdivision.processingFormat, frameCapacity: subBeatLength)!
+        try! audioFileSubdivision.read(into: bufferSubdivisionClick)
+        bufferSubdivisionClick.frameLength = subBeatLength
+        let subdivisionClickArray = Array(UnsafeBufferPointer(start: bufferSubdivisionClick.floatChannelData![0], count: channelCount * Int(subBeatLength)))
+        // Scale subdivision click by subdivisionVolume
+        let scaledSubdivisionArray = subdivisionClickArray.map { $0 * subdivisionVolume }
 
-            bufferBar.floatChannelData!.pointee.update(from: mainClickArray, count: channelCount * Int(bufferBar.frameLength))
-        } else {
-            let bufferAccentedClick = AVAudioPCMBuffer(pcmFormat: audioFileAccented.processingFormat, frameCapacity: beatLength)!
-            try! audioFileAccented.read(into: bufferAccentedClick)
-            bufferAccentedClick.frameLength = beatLength
+        let totalSlots = totalSubTicks
+        let bufferBar = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: subBeatLength * AVAudioFrameCount(totalSlots))!
+        bufferBar.frameLength = subBeatLength * AVAudioFrameCount(totalSlots)
 
-            bufferBar = AVAudioPCMBuffer(pcmFormat: audioFileMain.processingFormat, frameCapacity: beatLength * AVAudioFrameCount(beats))!
-            bufferBar.frameLength = beatLength * AVAudioFrameCount(beats)
-
-            let channelCount = Int(audioFileMain.processingFormat.channelCount)
-            let mainClickArray = Array(UnsafeBufferPointer(start: bufferMainClick.floatChannelData![0], count: channelCount * Int(beatLength)))
-            let accentedClickArray = Array(UnsafeBufferPointer(start: bufferAccentedClick.floatChannelData![0], count: channelCount * Int(beatLength)))
-
-            var barArray = [Float]()
-            for i in 0..<beats {
-                if isAccentBeat(i) {
+        var barArray = [Float]()
+        for tick in 0..<totalSlots {
+            let isDownbeat = (tick % subdivision) == 0
+            let beatIndex = tick / subdivision
+            if isDownbeat {
+                if isAccentBeat(beatIndex) {
                     barArray.append(contentsOf: accentedClickArray)
                 } else {
                     barArray.append(contentsOf: mainClickArray)
                 }
+            } else {
+                barArray.append(contentsOf: scaledSubdivisionArray)
             }
-
-            bufferBar.floatChannelData!.pointee.update(from: barArray, count: channelCount * Int(bufferBar.frameLength))
         }
+
+        bufferBar.floatChannelData!.pointee.update(from: barArray, count: channelCount * Int(bufferBar.frameLength))
+
         //
         self.startTime = self.audioPlayerNode.lastRenderTime
         self.audioPlayerNode.scheduleBuffer(bufferBar, at: nil, options: .loops,completionHandler: nil)
@@ -276,19 +315,19 @@ class Metronome {
     
     private func startBeatTimer() {
         if self.eventTick == nil {return}
-        let beatDuration = 60.0 / Double(audioBpm)
+        let subBeatDuration = 60.0 / (Double(audioBpm) * Double(subdivision))
         timer?.cancel()
         timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
-        timer?.schedule(deadline: .now(), repeating: beatDuration, leeway: .milliseconds(10))
+        timer?.schedule(deadline: .now(), repeating: subBeatDuration, leeway: .milliseconds(10))
         timer?.setEventHandler { [weak self] in
             guard let self = self else { return }
             guard let startTime = self.startTime,
                   let currentTime = self.audioPlayerNode.lastRenderTime,
                   let elapsedTime = self.getElapsedTime(from: startTime, to: currentTime) else { return }
 
-            let currentBeat = Int(elapsedTime / beatDuration)
-            let tb = self.totalBeats
-            let currentTick = (tb > 1) ? (currentBeat % tb) : 0
+            let currentSubTick = Int(elapsedTime / subBeatDuration)
+            let ts = self.totalSubTicks
+            let currentTick = (ts > 1) ? (currentSubTick % ts) : 0
 
             DispatchQueue.main.async {
                 self.eventTick?.send(res: currentTick)

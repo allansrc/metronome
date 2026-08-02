@@ -56,10 +56,13 @@ class MethodChannelMetronome extends MetronomePlatform {
   Future<void> init(
     String mainPath, {
     String accentedPath = '',
+    String subdivisionPath = '',
     int bpm = 120,
     int volume = 50,
     bool enableTickCallback = false,
     List<int> accentPattern = const [4],
+    int subdivision = 1,
+    int subdivisionVolume = 50,
     int sampleRate = 44100,
   }) async {
     if (mainPath == '') {
@@ -72,6 +75,12 @@ class MethodChannelMetronome extends MetronomePlatform {
       throw Exception('BPM must be greater than 0');
     }
     _validateAccentPattern(accentPattern);
+    if (subdivision < 1) {
+      throw Exception('Subdivision must be >= 1');
+    }
+    if (subdivisionVolume > 100 || subdivisionVolume < 0) {
+      throw Exception('Subdivision volume must be between 0 and 100');
+    }
     if (sampleRate <= 0) {
       throw Exception('sampleRate must be greater than 0');
     }
@@ -80,14 +89,21 @@ class MethodChannelMetronome extends MetronomePlatform {
     if (accentedPath != '') {
       accentedFileBytes = await loadFileBytes(accentedPath);
     }
+    Uint8List subdivisionFileBytes = Uint8List.fromList([]);
+    if (subdivisionPath != '') {
+      subdivisionFileBytes = await loadFileBytes(subdivisionPath);
+    }
     try {
       await methodChannel.invokeMethod<void>('init', {
         'mainFileBytes': mainFileBytes,
         'accentedFileBytes': accentedFileBytes,
+        'subdivisionFileBytes': subdivisionFileBytes,
         'bpm': bpm,
         'volume': volume / 100.0,
         'enableTickCallback': enableTickCallback,
         'accentPattern': accentPattern,
+        'subdivision': subdivision,
+        'subdivisionVolume': subdivisionVolume / 100.0,
         'sampleRate': sampleRate,
       });
     } catch (e) {
@@ -265,6 +281,62 @@ class MethodChannelMetronome extends MetronomePlatform {
       if (kDebugMode) {
         print(e);
       }
+    }
+  }
+
+  @override
+  Future<void> setSubdivision(int subdivision) async {
+    if (subdivision < 1) {
+      throw Exception('Subdivision must be >= 1');
+    }
+    try {
+      await methodChannel.invokeMethod<void>('setSubdivision', {
+        'subdivision': subdivision,
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+    }
+  }
+
+  @override
+  Future<int?> getSubdivision() async {
+    try {
+      return await methodChannel.invokeMethod<int>('getSubdivision');
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+      return 1;
+    }
+  }
+
+  @override
+  Future<void> setSubdivisionVolume(int subdivisionVolume) async {
+    if (subdivisionVolume > 100 || subdivisionVolume < 0) {
+      throw Exception('Subdivision volume must be between 0 and 100');
+    }
+    try {
+      await methodChannel.invokeMethod<void>('setSubdivisionVolume', {
+        'subdivisionVolume': subdivisionVolume / 100.0,
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+    }
+  }
+
+  @override
+  Future<int?> getSubdivisionVolume() async {
+    try {
+      return await methodChannel.invokeMethod<int>('getSubdivisionVolume');
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+      return 50;
     }
   }
 
