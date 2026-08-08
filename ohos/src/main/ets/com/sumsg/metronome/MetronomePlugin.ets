@@ -13,6 +13,7 @@ class Metronome {
   private mainSound: ArrayBuffer = new ArrayBuffer(0);
   private accentedSound: ArrayBuffer = new ArrayBuffer(0);
   private audioBuffer: ArrayBuffer | null = null;
+  private audioDataOffset: number = 0;
   private eventTickSink: EventSink | null = null;
   private playing: boolean = false;
   private updated: boolean = true;
@@ -58,18 +59,23 @@ class Metronome {
     this.tickCallbackEnabled = enableTickCallback;
     this.updated = true;
     this.configureTickCallback();
+    this.configureWriteCallback();
   }
 
   async play(): Promise<void> {
     if (this.renderer === null || this.playing) {
       return;
     }
-    await this.renderer.start();
     this.playing = true;
     this.tick = 0;
-    const token = ++this.playbackToken;
+    this.playbackToken++;
+    try {
+      await this.renderer.start();
+    } catch (error) {
+      this.playing = false;
+      throw new Error(String(error));
+    }
     this.eventTickSink?.success(0);
-    this.writeLoop(token).catch(() => undefined);
   }
 
   async pause(): Promise<void> {
@@ -92,6 +98,7 @@ class Metronome {
       await this.renderer.stop();
     }
     this.audioBuffer = null;
+    this.audioDataOffset = 0;
     this.updated = true;
   }
 
@@ -170,31 +177,42 @@ class Metronome {
     const buffer = new Uint8Array(framesPerBeat * beats * 2);
     for (let beat = 0; beat < beats; beat++) {
       const sound = beat === 0 && beats > 1 ? this.accentedSound : this.mainSound;
-      const source = new Uint8Array(sound);
+      const source = new Uint8Array(sound).subarray(sound.byteLength > 44 ? 44 : 0);
       const offset = beat * framesPerBeat * 2;
       buffer.set(source.subarray(0, Math.min(source.length, framesPerBeat * 2)), offset);
     }
     return buffer.buffer;
   }
 
-  private async writeLoop(token: number): Promise<void> {
-    const renderer = this.renderer;
-    while (renderer !== null && this.playing && token === this.playbackToken) {
+  private configureWriteCallback(): void {
+    if (this.renderer === null) {
+      return;
+    }
+    this.renderer.off('writeData');
+    this.renderer.on('writeData', (data: ArrayBuffer): audio.AudioDataCallbackResult => {
+      const target = new Uint8Array(data);
+      if (!this.playing) {
+        target.fill(0);
+        return audio.AudioDataCallbackResult.INVALID;
+      }
       if (this.updated || this.audioBuffer === null) {
         this.audioBuffer = this.generateBuffer();
+        this.audioDataOffset = 0;
         this.updated = false;
       }
       const bytes = new Uint8Array(this.audioBuffer);
-      const chunkSize = await renderer.getBufferSize();
-      if (chunkSize <= 0) {
-        return;
+      if (bytes.length === 0) {
+        target.fill(0);
+        return audio.AudioDataCallbackResult.INVALID;
       }
-      for (let offset = 0; offset < bytes.length && this.playing && token === this.playbackToken;
-        offset += chunkSize) {
-        const chunk = bytes.slice(offset, Math.min(offset + chunkSize, bytes.length));
-        await renderer.write(chunk.buffer);
+      for (let offset = 0; offset < target.length;) {
+        const count = Math.min(bytes.length - this.audioDataOffset, target.length - offset);
+        target.set(bytes.subarray(this.audioDataOffset, this.audioDataOffset + count), offset);
+        offset += count;
+        this.audioDataOffset = (this.audioDataOffset + count) % bytes.length;
       }
-    }
+      return audio.AudioDataCallbackResult.VALID;
+    });
   }
 
   private async releaseRenderer(): Promise<void> {
