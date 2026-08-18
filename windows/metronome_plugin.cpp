@@ -20,6 +20,10 @@ namespace metronome
         std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
             registrar->messenger(), "metronome_tick",
             &flutter::StandardMethodCodec::GetInstance());
+    auto eventTempoRampChannel =
+        std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
+            registrar->messenger(), "metronome_tempo_ramp",
+            &flutter::StandardMethodCodec::GetInstance());
 
     auto plugin = std::make_unique<MetronomePlugin>();
 
@@ -43,6 +47,22 @@ namespace metronome
                 -> std::unique_ptr<flutter::StreamHandlerError<>>
             {
               plugin_pointer->eventSink.reset();
+              return nullptr;
+            }));
+    eventTempoRampChannel->SetStreamHandler(
+        std::make_unique<flutter::StreamHandlerFunctions<>>(
+            [plugin_pointer = plugin.get()](const flutter::EncodableValue *, std::unique_ptr<flutter::EventSink<>> &&events)
+                -> std::unique_ptr<flutter::StreamHandlerError<>>
+            {
+              plugin_pointer->eventTempoRampSink = std::shared_ptr<flutter::EventSink<flutter::EncodableValue>>(events.release());
+              if (plugin_pointer->metronome)
+                plugin_pointer->metronome->EnableTempoRampCallback(plugin_pointer->eventTempoRampSink);
+              return nullptr;
+            },
+            [plugin_pointer = plugin.get()](const flutter::EncodableValue *)
+                -> std::unique_ptr<flutter::StreamHandlerError<>>
+            {
+              plugin_pointer->eventTempoRampSink.reset();
               return nullptr;
             }));
 
@@ -76,6 +96,10 @@ namespace metronome
       {
         metronome->EnableTickCallback(eventSink);
       }
+      if (eventTempoRampSink)
+      {
+        metronome->EnableTempoRampCallback(eventTempoRampSink);
+      }
       result->Success(true);
     }
     else if (method == "play")
@@ -104,6 +128,26 @@ namespace metronome
     else if (method == "getBPM")
     {
       result->Success(flutter::EncodableValue(metronome->audioBpm));
+    }
+    else if (method == "configureTempoRamp")
+    {
+      if (metronome->IsPlaying())
+      {
+        result->Error("ramp_while_playing", "Pause or stop before configuring a tempo ramp");
+        return;
+      }
+      auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
+      metronome->ConfigureTempoRamp(
+          std::get<int>(arguments[flutter::EncodableValue("startBpm")]),
+          std::get<int>(arguments[flutter::EncodableValue("targetBpm")]),
+          std::get<int>(arguments[flutter::EncodableValue("stepBpm")]),
+          std::get<int>(arguments[flutter::EncodableValue("measuresPerStep")]));
+      result->Success();
+    }
+    else if (method == "disableTempoRamp")
+    {
+      metronome->DisableTempoRamp();
+      result->Success();
     }
     else if (method == "setTimeSignature")
     {
