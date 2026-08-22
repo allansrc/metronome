@@ -55,8 +55,8 @@ private:
     void CompleteRampMeasure();
     void ResetRamp();
     void EmitRampProgress();
-    std::vector<int16_t> Metronome::byteArrayToShortArray(const std::vector<uint8_t> &byteArray);
-    std::vector<int16_t> Metronome::generateBuffer();
+    std::vector<int16_t> byteArrayToShortArray(const std::vector<uint8_t> &byteArray);
+    std::vector<int16_t> generateBuffer();
     static void CALLBACK WaveOutProc(HWAVEOUT hwo, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
     HWAVEOUT hWaveOut;
     size_t playCursor;

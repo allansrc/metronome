@@ -207,13 +207,6 @@ namespace metronome
       metronome->DisableTempoRamp();
       result->Success();
     }
-    else if (method == "setTimeSignature")
-    {
-      auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
-      std::vector<int> accentPattern = ReadAccentPattern(arguments);
-      metronome->SetAccentPattern(accentPattern);
-      result->Success(true);
-    }
     else if (method == "getAccentPattern")
     {
       result->Success(flutter::EncodableValue(AccentPatternToEncodable(metronome->accentPattern)));

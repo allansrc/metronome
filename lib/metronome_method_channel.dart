@@ -186,7 +186,8 @@ class MethodChannelMetronome extends MetronomePlatform {
       }
     }
   }
-  
+
+  @override
   Future<void> configureTempoRamp(TempoRampConfig config) async {
     config.validate();
     await methodChannel.invokeMethod<void>(
@@ -196,22 +197,6 @@ class MethodChannelMetronome extends MetronomePlatform {
   @override
   Future<void> disableTempoRamp() async {
     await methodChannel.invokeMethod<void>('disableTempoRamp');
-  }
-
-  @override
-  Future<void> setTimeSignature(int timeSignature) async {
-    if (timeSignature < 0) {
-      throw Exception('timeSignature must be a positive integer');
-    }
-    try {
-      await methodChannel.invokeMethod<void>('setAccentPattern', {
-        'accentPattern': accentPattern,
-      });
-    } catch (e) {
-      if (kDebugMode) {
-        print(e);
-      }
-    }
   }
 
   @override

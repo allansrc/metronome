@@ -120,7 +120,7 @@ class Metronome {
   Future<void> setAccentPattern(List<int> accentPattern) async {
     return MetronomePlatform.instance.setAccentPattern(accentPattern);
   }
-  
+
   /// Arms a progressive tempo ramp. Use [play] to begin or resume it.
   Future<void> configureTempoRamp(TempoRampConfig config) async {
     config.validate();
@@ -130,11 +130,6 @@ class Metronome {
   /// Disables ramp mode and keeps the current BPM.
   Future<void> disableTempoRamp() async {
     return MetronomePlatform.instance.disableTempoRamp();
-  }
-
-  ///set the time signature of the metronome
-  Future<void> setTimeSignature(int timeSignature) async {
-    return MetronomePlatform.instance.setTimeSignature(timeSignature);
   }
 
   ///get the accent pattern of the metronome

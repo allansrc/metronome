@@ -103,13 +103,6 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
               case "getAccentPattern":
                   result(metronome?.accentPattern)
                 break;
-              case "setTimeSignature":
-                  setTimeSignature(attributes: attributes)
-                  result(nil)
-                  return
-              case "getTimeSignature":
-                  result(metronome?.audioTimeSignature)
-                break;
               case "setAudioFile":
                   setAudioFile(attributes: attributes)
                   result(nil)

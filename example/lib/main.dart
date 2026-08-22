@@ -259,7 +259,9 @@ class _MyAppState extends State<MyApp> {
   }
 
   Widget _buildRampSection() {
-    final stages = _rampConfig.stages(beatsPerMeasure: timeSignature);
+    final beatsPerMeasure =
+        accentPattern.fold<int>(0, (total, group) => total + group);
+    final stages = _rampConfig.stages(beatsPerMeasure: beatsPerMeasure);
     final timeToTarget = stages.last.startsAt;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 12),
@@ -475,14 +477,6 @@ class _MyAppState extends State<MyApp> {
   Widget _buildTimeSignButton(String text, List<int> pattern) {
     final selected = _samePattern(accentPattern, pattern);
     return ElevatedButton(
-      onPressed: isplaying && rampEnabled
-          ? null
-          : () {
-              currentTick = 0;
-              timeSignature = ts;
-              _metronomePlugin.setTimeSignature(ts);
-              setState(() {});
-            },
       child: Text(
         text,
         style: TextStyle(color: selected ? Colors.red : null),

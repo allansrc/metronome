@@ -86,7 +86,7 @@ abstract class MetronomePlatform extends PlatformInterface {
   Future<void> setAccentPattern(List<int> accentPattern) {
     throw UnimplementedError('setAccentPattern() has not been implemented.');
   }
-  
+
   Future<void> configureTempoRamp(TempoRampConfig config) {
     throw UnimplementedError(
       'configureTempoRamp() has not been implemented.',
@@ -95,10 +95,6 @@ abstract class MetronomePlatform extends PlatformInterface {
 
   Future<void> disableTempoRamp() {
     throw UnimplementedError('disableTempoRamp() has not been implemented.');
-  }
-
-  Future<void> setTimeSignature(int timeSignature) {
-    throw UnimplementedError('setTimeSignature() has not been implemented.');
   }
 
   Future<List<int>?> getAccentPattern() {

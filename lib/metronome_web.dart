@@ -43,8 +43,7 @@ class MetronomeWeb extends MetronomePlatform {
   int _rampStageIndex = 0;
   int _completedRampMeasures = 0;
 
-  int get _totalBeats =>
-      _accentPattern.fold<int>(0, (sum, g) => sum + g);
+  int get _totalBeats => _accentPattern.fold<int>(0, (sum, g) => sum + g);
 
   bool _isAccentBeat(int tick) {
     int pos = 0;
@@ -178,7 +177,8 @@ class MetronomeWeb extends MetronomePlatform {
     _validateAccentPattern(accentPattern);
     _accentPattern = List<int>.from(accentPattern);
   }
-  
+
+  @override
   Future<void> configureTempoRamp(TempoRampConfig config) async {
     config.validate();
     if (_isPlaying) {
@@ -196,13 +196,6 @@ class MetronomeWeb extends MetronomePlatform {
     _rampStageIndex = 0;
     _completedRampMeasures = 0;
     tempoRampController.add(const TempoRampProgress.idle());
-  }
-
-  @override
-  Future<void> setTimeSignature(int timeSignature) async {
-    if (timeSignature != _timeSignature) {
-      _timeSignature = timeSignature;
-    }
   }
 
   @override
@@ -244,11 +237,9 @@ class MetronomeWeb extends MetronomePlatform {
   }
 
   void _scheduleBeat(double time) {
-    final isAccented = _isAccentBeat(_currentTick);
     _applyRampAtDownbeat();
     final scheduledTick = _currentTick;
-    final effectiveTimeSignature = _timeSignature.clamp(1, 1000);
-    final isAccented = (scheduledTick % effectiveTimeSignature) == 0;
+    final isAccented = _isAccentBeat(scheduledTick);
     final buffer = isAccented ? _accentedSoundBuffer : _mainSoundBuffer;
     final source = _audioContext!.createBufferSource();
     source.buffer = buffer;
@@ -266,11 +257,6 @@ class MetronomeWeb extends MetronomePlatform {
         _accentedSoundBuffer = _accentedSoundBufferTemp;
         _accentedSoundBufferTemp = null;
       }
-      if (_enableTickCallback) {
-        tickController.add(_currentTick);
-      }
-      final tb = _totalBeats;
-      _currentTick = tb < 1 ? 0 : (_currentTick + 1) % tb;
     });
     if (_enableTickCallback) {
       final delay = ((time - _audioContext!.currentTime) * 1000).round();
@@ -281,7 +267,8 @@ class MetronomeWeb extends MetronomePlatform {
         (delay < 0 ? 0 : delay).toJS,
       );
     }
-    _currentTick = (_currentTick + 1) % effectiveTimeSignature;
+    final totalBeats = _totalBeats;
+    _currentTick = totalBeats < 1 ? 0 : (_currentTick + 1) % totalBeats;
     if (_currentTick == 0 && _rampStatus == TempoRampStatus.running) {
       _completedRampMeasures++;
       _emitRampProgress();

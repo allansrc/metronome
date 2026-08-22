@@ -129,13 +129,6 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
         }
         result.success(patternList);
         break;
-      case "setTimeSignature":
-        setTimeSignature(call);
-        result.success(null);
-        return;
-      case "getTimeSignature":
-        result.success(metronome.audioTimeSignature);
-        break;
       case "setAudioFile":
         setAudioFile(call);
         result.success(null);
