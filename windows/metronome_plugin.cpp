@@ -131,6 +131,11 @@ namespace metronome
     }
     else if (method == "configureTempoRamp")
     {
+      if (!metronome)
+      {
+        result->Error("not_initialized", "Metronome has not been initialized");
+        return;
+      }
       if (metronome->IsPlaying())
       {
         result->Error("ramp_while_playing", "Pause or stop before configuring a tempo ramp");
@@ -146,6 +151,11 @@ namespace metronome
     }
     else if (method == "disableTempoRamp")
     {
+      if (!metronome)
+      {
+        result->Error("not_initialized", "Metronome has not been initialized");
+        return;
+      }
       metronome->DisableTempoRamp();
       result->Success();
     }
