@@ -63,7 +63,10 @@ namespace metronome
                 -> std::unique_ptr<flutter::StreamHandlerError<>>
             {
               plugin_pointer->eventTempoRampSink.reset();
+              if (plugin_pointer->metronome)
+                plugin_pointer->metronome->EnableTempoRampCallback(nullptr);
               return nullptr;
+            }
             }));
 
     registrar->AddPlugin(std::move(plugin));
