@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'metronome_platform_interface.dart';
+export 'tempo_ramp.dart';
+import 'tempo_ramp.dart';
 
 class Metronome {
   static final Metronome _instance = Metronome._internal();
@@ -20,6 +22,10 @@ class Metronome {
   /// );
   /// ```
   Stream<int> get tickStream => _platform.tickController.stream;
+
+  /// Emits lifecycle and measure progress for an enabled tempo ramp.
+  Stream<TempoRampProgress> get tempoRampStream =>
+      _platform.tempoRampController.stream;
 
   ///initialize the metronome
   /// ```
@@ -43,7 +49,7 @@ class Metronome {
     bool manageAudioSession = true,
   }) async {
     try {
-      MetronomePlatform.instance.init(
+      await MetronomePlatform.instance.init(
         mainPath,
         accentedPath: accentedPath,
         bpm: bpm,
@@ -108,6 +114,17 @@ class Metronome {
   Future<int> getBPM() async {
     int? bpm = await MetronomePlatform.instance.getBPM();
     return bpm ?? 120;
+  }
+
+  /// Arms a progressive tempo ramp. Use [play] to begin or resume it.
+  Future<void> configureTempoRamp(TempoRampConfig config) async {
+    config.validate();
+    return MetronomePlatform.instance.configureTempoRamp(config);
+  }
+
+  /// Disables ramp mode and keeps the current BPM.
+  Future<void> disableTempoRamp() async {
+    return MetronomePlatform.instance.disableTempoRamp();
   }
 
   ///set the time signature of the metronome

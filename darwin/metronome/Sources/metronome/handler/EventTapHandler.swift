@@ -28,3 +28,23 @@ class EventTickHandler: NSObject,FlutterStreamHandler {
         return nil
     }
 }
+
+class EventTempoRampHandler: NSObject, FlutterStreamHandler {
+    private var eventSink: FlutterEventSink?
+
+    public func send(res: [String: Any]) {
+        DispatchQueue.main.async { [weak self] in
+            self?.eventSink?(res)
+        }
+    }
+
+    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        eventSink = events
+        return nil
+    }
+
+    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        eventSink = nil
+        return nil
+    }
+}

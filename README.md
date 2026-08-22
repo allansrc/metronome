@@ -91,6 +91,33 @@ metronome.setBPM(120);
 metronome.getBPM(); 
 ```
 
+### Progressive tempo ramp
+
+Arm an upward tempo ramp before playback, then use the normal play, pause, and
+stop controls. Tempo changes happen at measure boundaries without restarting
+the audio engine.
+
+```dart
+await metronome.configureTempoRamp(
+  const TempoRampConfig(
+    startBpm: 80,
+    targetBpm: 120,
+    stepBpm: 5,
+    measuresPerStep: 4,
+  ),
+);
+
+metronome.tempoRampStream.listen((progress) {
+  print('${progress.currentBpm} BPM: ${progress.status.name}');
+});
+
+await metronome.play();
+```
+
+`pause()` preserves ramp progress, while `stop()` resets the armed ramp to its
+starting BPM. Calling `setBPM()` disables ramp mode and keeps the manually
+selected tempo. Ramp settings can be changed while paused or stopped.
+
 ### TimeSignature
 
 Disable accents when less than 2
@@ -146,4 +173,3 @@ metronome.tickStream.listen((int tick) {
   print("tick: $tick");
 });
 ```
-

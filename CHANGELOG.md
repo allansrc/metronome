@@ -1,3 +1,7 @@
+## Next
+
+* Add progressive tempo ramp mode with seamless measure-boundary BPM changes, progress events, and a preview timeline in the example app.
+
 ## 2.0.13
 
 * Add the `manageAudioSession` parameter to `Metronome.init`.

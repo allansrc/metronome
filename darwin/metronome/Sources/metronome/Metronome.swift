@@ -16,6 +16,16 @@ class Metronome {
     private var sampleRate: Int = 44100
     private var timer: DispatchSourceTimer?
     private let timerQueue = DispatchQueue(label: "com.metronome.beat-timer", qos: .background)
+    private var eventTempoRamp: EventTempoRampHandler?
+    private var rampEnabled = false
+    private var rampStatus = "idle"
+    private var rampStartBpm = 0
+    private var rampTargetBpm = 0
+    private var rampStepBpm = 0
+    private var rampMeasuresPerStep = 0
+    private var rampStageIndex = 0
+    private var rampCompletedMeasures = 0
+    private var playbackToken = 0
     /// Initialize the metronome with the main and accented audio files.
     init(
         mainFileBytes: Data,
@@ -85,6 +95,7 @@ class Metronome {
 
     /// Start the metronome.
     func play() {
+        if isPlaying { return }
         if !audioEngine.isRunning {
             do {
                 try audioEngine.start()
@@ -93,16 +104,33 @@ class Metronome {
                 return
             }
         }
-        audioBuffer = generateBuffer()
+        playbackToken += 1
+        if rampEnabled {
+            if rampStatus != "completed" { rampStatus = "running" }
+            scheduleRampMeasure(token: playbackToken)
+            emitRampProgress()
+        } else {
+            audioBuffer = generateBuffer()
+        }
     }
 
     /// Pause the metronome.
     func pause() {
-        stop()
+        stopPlayback()
+        if rampEnabled && rampStatus == "running" {
+            rampStatus = "paused"
+            emitRampProgress()
+        }
     }
     
     /// Stop the metronome.
     func stop() {
+        stopPlayback()
+        if rampEnabled { resetRamp() }
+    }
+
+    private func stopPlayback() {
+        playbackToken += 1
         // Stop the beat callback before operating on the player node.
         stopBeatTimer()
         if audioBuffer != nil {
@@ -114,6 +142,7 @@ class Metronome {
     
     /// Set the BPM of the metronome.
     func setBPM(bpm: Int) {
+        if rampEnabled { disableTempoRamp() }
         if audioBpm != bpm {
             audioBpm = bpm
             if isPlaying {
@@ -172,6 +201,34 @@ class Metronome {
     public func enableTickCallback(_eventTickSink: EventTickHandler) {
         self.eventTick = _eventTickSink
     }
+
+    public func enableTempoRampCallback(_ eventSink: EventTempoRampHandler) {
+        eventTempoRamp = eventSink
+        if rampEnabled { emitRampProgress() }
+    }
+
+    func configureTempoRamp(startBpm: Int, targetBpm: Int, stepBpm: Int, measuresPerStep: Int) {
+        rampEnabled = true
+        rampStartBpm = startBpm
+        rampTargetBpm = targetBpm
+        rampStepBpm = stepBpm
+        rampMeasuresPerStep = measuresPerStep
+        resetRamp()
+    }
+
+    func disableTempoRamp() {
+        let wasPlaying = isPlaying
+        rampEnabled = false
+        rampStatus = "idle"
+        rampStageIndex = 0
+        rampCompletedMeasures = 0
+        emitRampProgress()
+        if wasPlaying {
+            let buffer = buildBuffer()
+            audioBuffer = buffer
+            audioPlayerNode.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
+        }
+    }
 #if os(iOS)
     private func setupNotifications() {
         NotificationCenter.default.addObserver(
@@ -215,7 +272,7 @@ class Metronome {
     }
 #endif
     /// Generate buffer with accents based on time signature
-    private func generateBuffer() -> AVAudioPCMBuffer {
+    private func buildBuffer() -> AVAudioPCMBuffer {
         audioFileMain.framePosition = 0
         audioFileAccented.framePosition = 0
 
@@ -257,11 +314,66 @@ class Metronome {
 
             bufferBar.floatChannelData!.pointee.update(from: barArray, count: channelCount * Int(bufferBar.frameLength))
         }
-        //
-        self.audioPlayerNode.scheduleBuffer(bufferBar, at: nil, options: .loops,completionHandler: nil)
+        return bufferBar
+    }
+
+    private func generateBuffer() -> AVAudioPCMBuffer {
+        let bufferBar = buildBuffer()
+        self.audioPlayerNode.scheduleBuffer(bufferBar, at: nil, options: .loops, completionHandler: nil)
         self.audioPlayerNode.play()
         startBeatTimer()
         return bufferBar
+    }
+
+    private func scheduleRampMeasure(token: Int) {
+        guard rampEnabled && token == playbackToken else { return }
+        let buffer = buildBuffer()
+        audioBuffer = buffer
+        audioPlayerNode.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
+            guard let self = self, token == self.playbackToken, self.audioPlayerNode.isPlaying else { return }
+            self.completeRampMeasure()
+            self.scheduleRampMeasure(token: token)
+        }
+        if !audioPlayerNode.isPlaying {
+            audioPlayerNode.play()
+            startBeatTimer()
+        }
+    }
+
+    private func completeRampMeasure() {
+        guard rampEnabled && rampStatus == "running" else { return }
+        rampCompletedMeasures += 1
+        if rampCompletedMeasures >= rampMeasuresPerStep {
+            rampCompletedMeasures = 0
+            audioBpm = min(audioBpm + rampStepBpm, rampTargetBpm)
+            rampStageIndex += 1
+            stopBeatTimer()
+            startBeatTimer()
+            if audioBpm >= rampTargetBpm { rampStatus = "completed" }
+        }
+        emitRampProgress()
+    }
+
+    private func resetRamp() {
+        audioBpm = rampStartBpm
+        rampStatus = "armed"
+        rampStageIndex = 0
+        rampCompletedMeasures = 0
+        emitRampProgress()
+    }
+
+    private var totalRampStages: Int {
+        return ((rampTargetBpm - rampStartBpm + rampStepBpm - 1) / rampStepBpm) + 1
+    }
+
+    private func emitRampProgress() {
+        eventTempoRamp?.send(res: [
+            "status": rampStatus,
+            "currentBpm": rampEnabled ? audioBpm : 0,
+            "stageIndex": rampStageIndex,
+            "completedMeasures": rampCompletedMeasures,
+            "totalStages": rampEnabled ? totalRampStages : 0,
+        ])
     }
     
     func stopBeatTimer() {
