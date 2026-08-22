@@ -147,6 +147,36 @@ metronome.setAudioFile(
 | `getAccentPattern()`                           | `Future<List<int>>` | Returns current accent pattern (defaults to `[4]`). |
 | `setAudioFile({mainPath, accentedPath})`       | `Future<void>` | Hot-swaps audio files without re-initializing.           |
 
+
+### Progressive tempo ramp
+
+Arm an upward tempo ramp before playback, then use the normal play, pause, and
+stop controls. Tempo changes happen at measure boundaries without restarting
+the audio engine.
+
+```dart
+await metronome.configureTempoRamp(
+  const TempoRampConfig(
+    startBpm: 80,
+    targetBpm: 120,
+    stepBpm: 5,
+    measuresPerStep: 4,
+  ),
+);
+
+metronome.tempoRampStream.listen((progress) {
+  print('${progress.currentBpm} BPM: ${progress.status.name}');
+});
+
+await metronome.play();
+```
+
+`pause()` preserves ramp progress, while `stop()` resets the armed ramp to its
+starting BPM. Calling `setBPM()` disables ramp mode and keeps the manually
+selected tempo. Ramp settings can be changed while paused or stopped.
+
+### TimeSignature
+
 ### Tick Stream
 
 `enableTickCallback` must be `true` in `init()` for events to be emitted.
@@ -256,6 +286,14 @@ metronome/
 - [x] Add support for time signature [#2](https://github.com/biner88/metronome/issues/2)
 - [x] Add Windows support
 - [x] Add tickCallback for web
+
+```dart
+metronome.tickStream.listen((int tick) {
+  print("tick: $tick");
+});
+```
+
+
 
 ## License
 

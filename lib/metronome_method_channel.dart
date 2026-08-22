@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'metronome_platform_interface.dart';
+import 'tempo_ramp.dart';
 
 void _validateAccentPattern(List<int> accentPattern) {
   if (accentPattern.isEmpty) {
@@ -39,6 +40,7 @@ class MethodChannelMetronome extends MetronomePlatform {
   @visibleForTesting
   final methodChannel = const MethodChannel('metronome');
   final eventTickChannel = const EventChannel("metronome_tick");
+  final eventTempoRampChannel = const EventChannel('metronome_tempo_ramp');
 
   MethodChannelMetronome() {
     eventTickChannel.receiveBroadcastStream().listen(
@@ -50,6 +52,16 @@ class MethodChannelMetronome extends MetronomePlatform {
       onError: (error) {
         // print("Tick Stream Error: $error");
       },
+    );
+    eventTempoRampChannel.receiveBroadcastStream().listen(
+      (event) {
+        if (event is Map) {
+          tempoRampController.add(
+            TempoRampProgress.fromMap(event.cast<Object?, Object?>()),
+          );
+        }
+      },
+      onError: (Object error) {},
     );
   }
   @override
@@ -164,6 +176,33 @@ class MethodChannelMetronome extends MetronomePlatform {
   @override
   Future<void> setAccentPattern(List<int> accentPattern) async {
     _validateAccentPattern(accentPattern);
+    try {
+      await methodChannel.invokeMethod<void>('setAccentPattern', {
+        'accentPattern': accentPattern,
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+    }
+  }
+  
+  Future<void> configureTempoRamp(TempoRampConfig config) async {
+    config.validate();
+    await methodChannel.invokeMethod<void>(
+        'configureTempoRamp', config.toMap());
+  }
+
+  @override
+  Future<void> disableTempoRamp() async {
+    await methodChannel.invokeMethod<void>('disableTempoRamp');
+  }
+
+  @override
+  Future<void> setTimeSignature(int timeSignature) async {
+    if (timeSignature < 0) {
+      throw Exception('timeSignature must be a positive integer');
+    }
     try {
       await methodChannel.invokeMethod<void>('setAccentPattern', {
         'accentPattern': accentPattern,

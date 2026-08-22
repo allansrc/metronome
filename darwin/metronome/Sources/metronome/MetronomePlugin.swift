@@ -10,6 +10,8 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
     //
     private let eventTickListener: EventTickHandler = EventTickHandler()
     private var eventTick: FlutterEventChannel?
+    private let eventTempoRampListener = EventTempoRampHandler()
+    private var eventTempoRamp: FlutterEventChannel?
     //
     init(with registrar: FlutterPluginRegistrar) {}
     //
@@ -27,34 +29,71 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
         //
         instance.eventTick = FlutterEventChannel(name: "metronome_tick", binaryMessenger: messenger)
         instance.eventTick?.setStreamHandler(instance.eventTickListener )
+        instance.eventTempoRamp = FlutterEventChannel(name: "metronome_tempo_ramp", binaryMessenger: messenger)
+        instance.eventTempoRamp?.setStreamHandler(instance.eventTempoRampListener)
     }
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
           let attributes = call.arguments as? NSDictionary
           switch call.method {
               case "init":
                   metronomeInit(attributes: attributes)
-                break;
+                  result(nil)
+                  return
               case "play":
                   metronome?.play()
-                break;
+                  result(nil)
+                  return
               case "pause":
                   metronome?.pause()
-                break;
+                  result(nil)
+                  return
               case "stop":
                   metronome?.stop()
-                break;
+                  result(nil)
+                  return
               case "getVolume":
                   result(metronome?.getVolume)
                 break;
               case "setVolume":
                   setVolume(attributes: attributes)
-                break;
+                  result(nil)
+                  return
               case "isPlaying":
                   result(metronome?.isPlaying)
                 break;
               case "setBPM":
                   setBPM(attributes: attributes)
-                break;
+                  result(nil)
+                  return
+              case "configureTempoRamp":
+                  guard let metronome = metronome else {
+                      result(FlutterError(code: "not_initialized", message: "Metronome has not been initialized", details: nil))
+                      return
+                  }
+                  if metronome.isPlaying {
+                      result(FlutterError(code: "ramp_while_playing", message: "Pause or stop before configuring a tempo ramp", details: nil))
+                      return
+                  }
+                  let startBpm = attributes?["startBpm"] as? Int ?? 0
+                  let targetBpm = attributes?["targetBpm"] as? Int ?? 0
+                  let stepBpm = attributes?["stepBpm"] as? Int ?? 0
+                  let measuresPerStep = attributes?["measuresPerStep"] as? Int ?? 0
+                  guard startBpm > 0, targetBpm > startBpm, stepBpm > 0, measuresPerStep > 0 else {
+                      result(FlutterError(code: "invalid_ramp_config", message: "Invalid tempo ramp configuration", details: nil))
+                      return
+                  }
+                  metronome.configureTempoRamp(
+                      startBpm: startBpm,
+                      targetBpm: targetBpm,
+                      stepBpm: stepBpm,
+                      measuresPerStep: measuresPerStep
+                  )
+                  result(nil)
+                  return
+              case "disableTempoRamp":
+                  metronome?.disableTempoRamp()
+                  result(nil)
+                  return
               case "getBPM":
                   result(metronome?.audioBpm)
                 break;
@@ -64,12 +103,21 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
               case "getAccentPattern":
                   result(metronome?.accentPattern)
                 break;
+              case "setTimeSignature":
+                  setTimeSignature(attributes: attributes)
+                  result(nil)
+                  return
+              case "getTimeSignature":
+                  result(metronome?.audioTimeSignature)
+                break;
               case "setAudioFile":
                   setAudioFile(attributes: attributes)
-                break;
+                  result(nil)
+                  return
               case "destroy":
                   metronome?.destroy()
-                break;
+                  result(nil)
+                  return
               default:
                   result("unkown")
                 break;
@@ -78,6 +126,7 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
     public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
         channel?.setMethodCallHandler(nil)
         eventTick?.setStreamHandler(nil)
+        eventTempoRamp?.setStreamHandler(nil)
     }
     private func setBPM( attributes:NSDictionary?) {
         if metronome != nil {
@@ -120,6 +169,7 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
             sampleRate:sampleRate,
             manageAudioSession: manageAudioSession
         )
+        metronome?.enableTempoRampCallback(eventTempoRampListener)
         if(enableTickCallback){
             metronome?.enableTickCallback(_eventTickSink: eventTickListener);
         }

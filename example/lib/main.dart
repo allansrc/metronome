@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:metronome/metronome.dart';
 
@@ -34,6 +36,22 @@ class _MyAppState extends State<MyApp> {
   String mainFileName = 'claves';
   String accentedFileName = 'woodblock_high';
   int currentTick = 0;
+  bool rampEnabled = false;
+  int rampStartBpm = 80;
+  int rampTargetBpm = 120;
+  int rampStepBpm = 5;
+  int rampMeasuresPerStep = 4;
+  TempoRampProgress rampProgress = const TempoRampProgress.idle();
+  late final StreamSubscription<int> _tickSubscription;
+  late final StreamSubscription<TempoRampProgress> _rampSubscription;
+
+  TempoRampConfig get _rampConfig => TempoRampConfig(
+        startBpm: rampStartBpm,
+        targetBpm: rampTargetBpm,
+        stepBpm: rampStepBpm,
+        measuresPerStep: rampMeasuresPerStep,
+      );
+
   @override
   void initState() {
     super.initState();
@@ -46,11 +64,9 @@ class _MyAppState extends State<MyApp> {
       accentPattern: List<int>.from(accentPattern),
       sampleRate: 44100,
     );
-    print("init:${_metronomePlugin.isInitialized}");
-    _metronomePlugin.tickStream.listen(
+    _tickSubscription = _metronomePlugin.tickStream.listen(
       (int tick) {
         currentTick = tick;
-        print("tick: $tick");
         if (metronomeIcon == metronomeIconRight) {
           metronomeIcon = metronomeIconLeft;
         } else {
@@ -59,10 +75,21 @@ class _MyAppState extends State<MyApp> {
         setState(() {});
       },
     );
+    _rampSubscription = _metronomePlugin.tempoRampStream.listen(
+      (progress) {
+        if (!mounted) return;
+        setState(() {
+          rampProgress = progress;
+          if (progress.currentBpm > 0) bpm = progress.currentBpm;
+        });
+      },
+    );
   }
 
   @override
   void dispose() {
+    _tickSubscription.cancel();
+    _rampSubscription.cancel();
     _metronomePlugin.destroy();
     super.dispose();
   }
@@ -103,15 +130,20 @@ class _MyAppState extends State<MyApp> {
                 min: 30,
                 max: 600,
                 divisions: 570,
-                onChangeEnd: (val) {
-                  _metronomePlugin.setBPM(bpm);
-                },
-                onChanged: (val) {
-                  bpm = val.toInt();
-                  currentTick = 0;
-                  setState(() {});
-                },
+                onChangeEnd: rampEnabled
+                    ? null
+                    : (val) {
+                        _metronomePlugin.setBPM(bpm);
+                      },
+                onChanged: rampEnabled
+                    ? null
+                    : (val) {
+                        bpm = val.toInt();
+                        currentTick = 0;
+                        setState(() {});
+                      },
               ),
+              _buildRampSection(),
               Text(
                 'Volume:$vol%',
                 style: const TextStyle(fontSize: 20),
@@ -167,22 +199,211 @@ class _MyAppState extends State<MyApp> {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () async {
-            currentTick = 0;
-            if (isplaying) {
-              _metronomePlugin.pause();
-              isplaying = false;
-            } else {
-              _metronomePlugin.play();
-              isplaying = true;
-            }
-            setState(() {});
-          },
-          child: Icon(isplaying ? Icons.pause : Icons.play_arrow),
+        floatingActionButton: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton.small(
+              heroTag: 'stop',
+              onPressed: _stopPlayback,
+              child: const Icon(Icons.stop),
+            ),
+            const SizedBox(width: 12),
+            FloatingActionButton(
+              heroTag: 'play-pause',
+              onPressed: _togglePlayback,
+              child: Icon(isplaying ? Icons.pause : Icons.play_arrow),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _togglePlayback() async {
+    currentTick = 0;
+    if (isplaying) {
+      await _metronomePlugin.pause();
+    } else {
+      await _metronomePlugin.play();
+    }
+    if (!mounted) return;
+    setState(() => isplaying = !isplaying);
+  }
+
+  Future<void> _stopPlayback() async {
+    await _metronomePlugin.stop();
+    if (!mounted) return;
+    setState(() {
+      isplaying = false;
+      currentTick = 0;
+    });
+  }
+
+  Future<void> _setRampEnabled(bool enabled) async {
+    if (enabled) {
+      await _metronomePlugin.configureTempoRamp(_rampConfig);
+      bpm = rampStartBpm;
+    } else {
+      await _metronomePlugin.disableTempoRamp();
+      bpm = await _metronomePlugin.getBPM();
+    }
+    if (!mounted) return;
+    setState(() => rampEnabled = enabled);
+  }
+
+  Future<void> _configureRamp() async {
+    if (!rampEnabled || isplaying) return;
+    await _metronomePlugin.configureTempoRamp(_rampConfig);
+    if (!mounted) return;
+    setState(() => bpm = rampStartBpm);
+  }
+
+  Widget _buildRampSection() {
+    final stages = _rampConfig.stages(beatsPerMeasure: timeSignature);
+    final timeToTarget = stages.last.startsAt;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Progressive tempo ramp'),
+              subtitle: Text(
+                rampEnabled
+                    ? '${rampProgress.status.name} · $bpm BPM'
+                    : 'Increase BPM at measure boundaries',
+              ),
+              value: rampEnabled,
+              onChanged: isplaying ? null : _setRampEnabled,
+            ),
+            _rampSlider(
+              label: 'Start BPM',
+              value: rampStartBpm,
+              min: 30,
+              max: 580,
+              onChanged: (value) {
+                setState(() {
+                  rampStartBpm = value;
+                  if (rampTargetBpm <= value) {
+                    rampTargetBpm = (value + rampStepBpm).clamp(31, 600);
+                  }
+                });
+              },
+            ),
+            _rampSlider(
+              label: 'Target BPM',
+              value: rampTargetBpm,
+              min: rampStartBpm + 1,
+              max: 600,
+              onChanged: (value) => setState(() => rampTargetBpm = value),
+            ),
+            _rampSlider(
+              label: 'Step',
+              value: rampStepBpm,
+              min: 1,
+              max: 50,
+              suffix: 'BPM',
+              onChanged: (value) => setState(() => rampStepBpm = value),
+            ),
+            _rampSlider(
+              label: 'Cadence',
+              value: rampMeasuresPerStep,
+              min: 1,
+              max: 16,
+              suffix: rampMeasuresPerStep == 1 ? 'measure' : 'measures',
+              onChanged: (value) => setState(() => rampMeasuresPerStep = value),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${stages.length} stages · ${_formatDuration(timeToTarget)} to target',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 128,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: stages.length,
+                separatorBuilder: (_, __) => const Icon(Icons.arrow_forward),
+                itemBuilder: (context, index) {
+                  final stage = stages[index];
+                  final active = rampEnabled &&
+                      index ==
+                          rampProgress.stageIndex.clamp(0, stages.length - 1);
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 112,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: active
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context).colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(12),
+                      border: active
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            )
+                          : null,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${stage.bpm} BPM',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(stage.isTarget
+                            ? 'Hold'
+                            : '${stage.measures} measures'),
+                        if (stage.duration != null)
+                          Text(_formatDuration(stage.duration!)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rampSlider({
+    required String label,
+    required int value,
+    required int min,
+    required int max,
+    required ValueChanged<int> onChanged,
+    String suffix = 'BPM',
+  }) {
+    final enabled = !isplaying;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label: $value $suffix'),
+        Slider(
+          value: value.toDouble(),
+          min: min.toDouble(),
+          max: max.toDouble(),
+          divisions: max - min,
+          onChanged: enabled ? (next) => onChanged(next.round()) : null,
+          onChangeEnd: enabled ? (_) => _configureRamp() : null,
+        ),
+      ],
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds.remainder(60);
+    return minutes == 0
+        ? '${seconds}s'
+        : '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildCircle(int index) {
@@ -254,6 +475,14 @@ class _MyAppState extends State<MyApp> {
   Widget _buildTimeSignButton(String text, List<int> pattern) {
     final selected = _samePattern(accentPattern, pattern);
     return ElevatedButton(
+      onPressed: isplaying && rampEnabled
+          ? null
+          : () {
+              currentTick = 0;
+              timeSignature = ts;
+              _metronomePlugin.setTimeSignature(ts);
+              setState(() {});
+            },
       child: Text(
         text,
         style: TextStyle(color: selected ? Colors.red : null),

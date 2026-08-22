@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'metronome_method_channel.dart';
+import 'tempo_ramp.dart';
 
 abstract class MetronomePlatform extends PlatformInterface {
   /// Constructs a MetronomePlatform.
@@ -27,6 +28,8 @@ abstract class MetronomePlatform extends PlatformInterface {
 
   final StreamController<int> tickController =
       StreamController<int>.broadcast();
+  final StreamController<TempoRampProgress> tempoRampController =
+      StreamController<TempoRampProgress>.broadcast();
 
   Future<void> init(
     String mainPath, {
@@ -82,6 +85,20 @@ abstract class MetronomePlatform extends PlatformInterface {
 
   Future<void> setAccentPattern(List<int> accentPattern) {
     throw UnimplementedError('setAccentPattern() has not been implemented.');
+  }
+  
+  Future<void> configureTempoRamp(TempoRampConfig config) {
+    throw UnimplementedError(
+      'configureTempoRamp() has not been implemented.',
+    );
+  }
+
+  Future<void> disableTempoRamp() {
+    throw UnimplementedError('disableTempoRamp() has not been implemented.');
+  }
+
+  Future<void> setTimeSignature(int timeSignature) {
+    throw UnimplementedError('setTimeSignature() has not been implemented.');
   }
 
   Future<List<int>?> getAccentPattern() {

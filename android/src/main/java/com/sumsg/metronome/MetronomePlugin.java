@@ -23,6 +23,8 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
   //
   private EventChannel eventTick;
   private EventChannel.EventSink eventTickSink;
+  private EventChannel eventTempoRamp;
+  private EventChannel.EventSink eventTempoRampSink;
   // private final String TAG = "metronome";
   /// Metronome
   private Metronome metronome = null;
@@ -45,6 +47,20 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
         eventTickSink = null;
       }
     });
+    eventTempoRamp = new EventChannel(flutterPluginBinding.getBinaryMessenger(),
+        "metronome_tempo_ramp");
+    eventTempoRamp.setStreamHandler(new EventChannel.StreamHandler() {
+      @Override
+      public void onListen(Object args, EventChannel.EventSink events) {
+        eventTempoRampSink = events;
+        if (metronome != null) metronome.enableTempoRampCallback(events);
+      }
+
+      @Override
+      public void onCancel(Object args) {
+        eventTempoRampSink = null;
+      }
+    });
   }
 
   @Override
@@ -52,28 +68,50 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     switch (call.method) {
       case "init":
         metronomeInit(call);
-        break;
+        result.success(null);
+        return;
       case "play":
         metronome.play();
-        break;
+        result.success(null);
+        return;
       case "pause":
         metronome.pause();
-        break;
+        result.success(null);
+        return;
       case "stop":
         metronome.stop();
-        break;
+        result.success(null);
+        return;
       case "getVolume":
         result.success(metronome.audioVolume);
         break;
       case "setVolume":
         setVolume(call);
-        break;
+        result.success(null);
+        return;
       case "isPlaying":
         result.success(metronome.isPlaying());
         break;
       case "setBPM":
         setBPM(call);
-        break;
+        result.success(null);
+        return;
+      case "configureTempoRamp":
+        try {
+          metronome.configureTempoRamp(
+              value(call, "startBpm"), value(call, "targetBpm"),
+              value(call, "stepBpm"), value(call, "measuresPerStep"));
+          result.success(null);
+        } catch (IllegalStateException exception) {
+          result.error("ramp_while_playing", exception.getMessage(), null);
+        } catch (IllegalArgumentException exception) {
+          result.error("invalid_ramp_config", exception.getMessage(), null);
+        }
+        return;
+      case "disableTempoRamp":
+        metronome.disableTempoRamp();
+        result.success(null);
+        return;
       case "getBPM":
         result.success(metronome.audioBpm);
         break;
@@ -91,12 +129,21 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
         }
         result.success(patternList);
         break;
+      case "setTimeSignature":
+        setTimeSignature(call);
+        result.success(null);
+        return;
+      case "getTimeSignature":
+        result.success(metronome.audioTimeSignature);
+        break;
       case "setAudioFile":
         setAudioFile(call);
-        break;
+        result.success(null);
+        return;
       case "destroy":
         metronome.destroy();
-        break;
+        result.success(null);
+        return;
       default:
         result.notImplemented();
         break;
@@ -107,6 +154,7 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
     channel.setMethodCallHandler(null);
     eventTick.setStreamHandler(null);
+    eventTempoRamp.setStreamHandler(null);
   }
 
   private void metronomeInit(@NonNull MethodCall call) {
@@ -136,6 +184,14 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
     if (enableTickCallback && eventTickSink != null) {
       metronome.enableTickCallback(eventTickSink);
     }
+    if (eventTempoRampSink != null) {
+      metronome.enableTempoRampCallback(eventTempoRampSink);
+    }
+  }
+
+  private int value(@NonNull MethodCall call, String name) {
+    Integer result = call.argument(name);
+    return result == null ? 0 : result;
   }
 
   private void setVolume(@NonNull MethodCall call) {

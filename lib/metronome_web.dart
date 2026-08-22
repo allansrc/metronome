@@ -5,6 +5,7 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
 import 'metronome_platform_interface.dart';
+import 'tempo_ramp.dart';
 
 class MetronomeWeb extends MetronomePlatform {
   static void registerWith(Registrar registrar) {
@@ -37,6 +38,10 @@ class MetronomeWeb extends MetronomePlatform {
   int _scheduleTimer = 0;
   final double _lookahead = 0.1;
   final double _scheduleInterval = 0.05;
+  TempoRampConfig? _rampConfig;
+  TempoRampStatus _rampStatus = TempoRampStatus.idle;
+  int _rampStageIndex = 0;
+  int _completedRampMeasures = 0;
 
   int get _totalBeats =>
       _accentPattern.fold<int>(0, (sum, g) => sum + g);
@@ -98,6 +103,10 @@ class MetronomeWeb extends MetronomePlatform {
     if (_isPlaying) return;
     _isPlaying = true;
     _currentTick = 0;
+    if (_rampConfig != null && _rampStatus != TempoRampStatus.completed) {
+      _rampStatus = TempoRampStatus.running;
+      _emitRampProgress();
+    }
     startScheduler();
   }
 
@@ -109,12 +118,19 @@ class MetronomeWeb extends MetronomePlatform {
     _currentSource = null;
     _scriptNode?.disconnect();
     _scriptNode = null;
+    if (_rampConfig != null && _rampStatus == TempoRampStatus.running) {
+      _rampStatus = TempoRampStatus.paused;
+      _emitRampProgress();
+    }
   }
 
   @override
   Future<void> stop() async {
     await pause();
     _currentTick = 0;
+    if (_rampConfig != null) {
+      _resetRamp();
+    }
   }
 
   @override
@@ -149,6 +165,9 @@ class MetronomeWeb extends MetronomePlatform {
 
   @override
   Future<void> setBPM(int bpm) async {
+    if (_rampConfig != null) {
+      await disableTempoRamp();
+    }
     if (bpm != _bpm) {
       _bpm = bpm;
     }
@@ -158,6 +177,32 @@ class MetronomeWeb extends MetronomePlatform {
   Future<void> setAccentPattern(List<int> accentPattern) async {
     _validateAccentPattern(accentPattern);
     _accentPattern = List<int>.from(accentPattern);
+  }
+  
+  Future<void> configureTempoRamp(TempoRampConfig config) async {
+    config.validate();
+    if (_isPlaying) {
+      throw StateError('Pause or stop before configuring a tempo ramp');
+    }
+    _rampConfig = config;
+    _bpm = config.startBpm;
+    _resetRamp();
+  }
+
+  @override
+  Future<void> disableTempoRamp() async {
+    _rampConfig = null;
+    _rampStatus = TempoRampStatus.idle;
+    _rampStageIndex = 0;
+    _completedRampMeasures = 0;
+    tempoRampController.add(const TempoRampProgress.idle());
+  }
+
+  @override
+  Future<void> setTimeSignature(int timeSignature) async {
+    if (timeSignature != _timeSignature) {
+      _timeSignature = timeSignature;
+    }
   }
 
   @override
@@ -194,12 +239,16 @@ class MetronomeWeb extends MetronomePlatform {
     }
     _scheduleTimer = web.window.setTimeout(
       _schedule.toJS,
-      (_scheduleInterval * 1000).round() as JSAny?,
+      (_scheduleInterval * 1000).round().toJS,
     );
   }
 
   void _scheduleBeat(double time) {
     final isAccented = _isAccentBeat(_currentTick);
+    _applyRampAtDownbeat();
+    final scheduledTick = _currentTick;
+    final effectiveTimeSignature = _timeSignature.clamp(1, 1000);
+    final isAccented = (scheduledTick % effectiveTimeSignature) == 0;
     final buffer = isAccented ? _accentedSoundBuffer : _mainSoundBuffer;
     final source = _audioContext!.createBufferSource();
     source.buffer = buffer;
@@ -223,6 +272,61 @@ class MetronomeWeb extends MetronomePlatform {
       final tb = _totalBeats;
       _currentTick = tb < 1 ? 0 : (_currentTick + 1) % tb;
     });
+    if (_enableTickCallback) {
+      final delay = ((time - _audioContext!.currentTime) * 1000).round();
+      web.window.setTimeout(
+        (() {
+          if (_isPlaying) tickController.add(scheduledTick);
+        }).toJS,
+        (delay < 0 ? 0 : delay).toJS,
+      );
+    }
+    _currentTick = (_currentTick + 1) % effectiveTimeSignature;
+    if (_currentTick == 0 && _rampStatus == TempoRampStatus.running) {
+      _completedRampMeasures++;
+      _emitRampProgress();
+    }
+  }
+
+  void _applyRampAtDownbeat() {
+    final config = _rampConfig;
+    if (config == null ||
+        _rampStatus != TempoRampStatus.running ||
+        _currentTick != 0 ||
+        _completedRampMeasures < config.measuresPerStep) {
+      return;
+    }
+    _completedRampMeasures = 0;
+    _bpm = (_bpm + config.stepBpm).clamp(_bpm, config.targetBpm);
+    _rampStageIndex++;
+    if (_bpm >= config.targetBpm) {
+      _rampStatus = TempoRampStatus.completed;
+    }
+    _emitRampProgress();
+  }
+
+  void _resetRamp() {
+    final config = _rampConfig;
+    if (config == null) return;
+    _bpm = config.startBpm;
+    _rampStatus = TempoRampStatus.armed;
+    _rampStageIndex = 0;
+    _completedRampMeasures = 0;
+    _emitRampProgress();
+  }
+
+  void _emitRampProgress() {
+    final config = _rampConfig;
+    if (config == null) return;
+    tempoRampController.add(
+      TempoRampProgress(
+        status: _rampStatus,
+        currentBpm: _bpm,
+        stageIndex: _rampStageIndex,
+        completedMeasures: _completedRampMeasures,
+        totalStages: config.totalStages,
+      ),
+    );
   }
 
   void stopScheduler() {
