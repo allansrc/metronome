@@ -101,6 +101,8 @@ public class MetronomePlugin implements FlutterPlugin, MethodCallHandler {
           result.success(null);
         } catch (IllegalStateException exception) {
           result.error("ramp_while_playing", exception.getMessage(), null);
+        } catch (IllegalArgumentException exception) {
+          result.error("invalid_ramp_config", exception.getMessage(), null);
         }
         return;
       case "disableTempoRamp":
