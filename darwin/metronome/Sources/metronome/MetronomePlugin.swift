@@ -74,11 +74,19 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
                       result(FlutterError(code: "ramp_while_playing", message: "Pause or stop before configuring a tempo ramp", details: nil))
                       return
                   }
+                  let startBpm = attributes?["startBpm"] as? Int ?? 0
+                  let targetBpm = attributes?["targetBpm"] as? Int ?? 0
+                  let stepBpm = attributes?["stepBpm"] as? Int ?? 0
+                  let measuresPerStep = attributes?["measuresPerStep"] as? Int ?? 0
+                  guard startBpm > 0, targetBpm > startBpm, stepBpm > 0, measuresPerStep > 0 else {
+                      result(FlutterError(code: "invalid_ramp_config", message: "Invalid tempo ramp configuration", details: nil))
+                      return
+                  }
                   metronome.configureTempoRamp(
-                      startBpm: attributes?["startBpm"] as? Int ?? 0,
-                      targetBpm: attributes?["targetBpm"] as? Int ?? 0,
-                      stepBpm: attributes?["stepBpm"] as? Int ?? 0,
-                      measuresPerStep: attributes?["measuresPerStep"] as? Int ?? 0
+                      startBpm: startBpm,
+                      targetBpm: targetBpm,
+                      stepBpm: stepBpm,
+                      measuresPerStep: measuresPerStep
                   )
                   result(nil)
                   return

@@ -38,7 +38,7 @@ public:
     void DisableTempoRamp();
     bool IsPlaying() const;
     void Destroy();
-    int Metronome::GetVolume() const;
+    int GetVolume() const;
     int audioBpm = 120;
     int audioTimeSignature = 4;
 

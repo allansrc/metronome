@@ -63,7 +63,10 @@ namespace metronome
                 -> std::unique_ptr<flutter::StreamHandlerError<>>
             {
               plugin_pointer->eventTempoRampSink.reset();
+              if (plugin_pointer->metronome)
+                plugin_pointer->metronome->EnableTempoRampCallback(nullptr);
               return nullptr;
+            }
             }));
 
     registrar->AddPlugin(std::move(plugin));
@@ -131,6 +134,11 @@ namespace metronome
     }
     else if (method == "configureTempoRamp")
     {
+      if (!metronome)
+      {
+        result->Error("not_initialized", "Metronome has not been initialized");
+        return;
+      }
       if (metronome->IsPlaying())
       {
         result->Error("ramp_while_playing", "Pause or stop before configuring a tempo ramp");
@@ -146,6 +154,11 @@ namespace metronome
     }
     else if (method == "disableTempoRamp")
     {
+      if (!metronome)
+      {
+        result->Error("not_initialized", "Metronome has not been initialized");
+        return;
+      }
       metronome->DisableTempoRamp();
       result->Success();
     }
