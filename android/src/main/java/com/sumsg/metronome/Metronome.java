@@ -13,6 +13,8 @@ import android.media.AudioAttributes;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
+
 import java.util.HashMap;
 import java.util.Map;
 import io.flutter.plugin.common.EventChannel;
@@ -25,7 +27,8 @@ public class Metronome {
     private short[] audioBuffer;
     private final int SAMPLE_RATE;
     public int audioBpm;
-    public int audioTimeSignature;
+    /// Group sizes per bar; first beat of each group uses the accented sound.
+    public int[] accentPattern;
     public float audioVolume;
     private boolean updated = false;
     private EventChannel.EventSink eventTickSink;
@@ -42,12 +45,12 @@ public class Metronome {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @SuppressWarnings("deprecation")
-    public Metronome(byte[] mainFileBytes, byte[] accentedFileBytes, int bpm, int timeSignature, float volume,
+    public Metronome(byte[] mainFileBytes, byte[] accentedFileBytes, int bpm, int[] accentPattern, float volume,
             int sampleRate) {
         SAMPLE_RATE = sampleRate;
         audioBpm = bpm;
         audioVolume = volume;
-        audioTimeSignature = timeSignature;
+        this.accentPattern = normalizeAccentPattern(accentPattern);
         mainSound = byteArrayToShortArray(mainFileBytes);
         if (accentedFileBytes.length == 0) {
             accentedSound = mainSound;
@@ -68,8 +71,6 @@ public class Metronome {
                     .setAudioAttributes(audioAttributes)
                     .setAudioFormat(audioFormat)
                     .setTransferMode(AudioTrack.MODE_STREAM)
-                    // .setBufferSizeInBytes(SAMPLE_RATE)
-                    // .setBufferSizeInBytes(SAMPLE_RATE * 2)
                     .build();
         } else {
             audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO,
@@ -78,13 +79,43 @@ public class Metronome {
         setVolume(volume);
     }
 
+    private static int[] normalizeAccentPattern(int[] pattern) {
+        if (pattern == null || pattern.length == 0) {
+            return new int[]{4};
+        }
+        for (int g : pattern) {
+            if (g < 1) {
+                return new int[]{4};
+            }
+        }
+        return Arrays.copyOf(pattern, pattern.length);
+    }
+
+    private int getTotalBeats() {
+        int sum = 0;
+        for (int g : accentPattern) {
+            sum += g;
+        }
+        return sum;
+    }
+
+    private boolean isAccentBeat(int index) {
+        int pos = 0;
+        for (int group : accentPattern) {
+            if (index == pos) {
+                return true;
+            }
+            pos += group;
+        }
+        return false;
+    }
+
     public void play() {
         if (!isPlaying()) {
             updated = true;
             onTick();
-            // Send immediate tick event to match iOS behavior
             if (eventTickSink != null) {
-                eventTickSink.success(0);  // Send tick 0 immediately
+                eventTickSink.success(0);
             }
             if (rampEnabled && !"completed".equals(rampStatus)) {
                 rampStatus = "running";
@@ -120,9 +151,10 @@ public class Metronome {
         }
     }
 
-    public void setTimeSignature(int timeSignature) {
-        if (timeSignature != audioTimeSignature) {
-            audioTimeSignature = timeSignature;
+    public void setAccentPattern(int[] pattern) {
+        int[] normalized = normalizeAccentPattern(pattern);
+        if (!Arrays.equals(accentPattern, normalized)) {
+            accentPattern = normalized;
             if (isPlaying()) {
                 pause();
                 play();
@@ -203,15 +235,16 @@ public class Metronome {
         currentTick = 0;
         int framesPerBeat = (int) (SAMPLE_RATE * 60 / (float) audioBpm);
         short[] bufferBar;
-        if (audioTimeSignature < 2) {
+        int beats = getTotalBeats();
+        if (beats < 2) {
             bufferBar = new short[framesPerBeat];
             int soundLength = Math.min(framesPerBeat, mainSound.length);
             System.arraycopy(mainSound, 0, bufferBar, 0, soundLength);
         } else {
-            int bufferSize = framesPerBeat * audioTimeSignature;
+            int bufferSize = framesPerBeat * beats;
             bufferBar = new short[bufferSize];
-            for (int i = 0; i < audioTimeSignature; i++) {
-                short[] sound = (i == 0) ? accentedSound : mainSound;
+            for (int i = 0; i < beats; i++) {
+                short[] sound = isAccentBeat(i) ? accentedSound : mainSound;
                 int soundLength = Math.min(framesPerBeat, sound.length);
                 System.arraycopy(sound, 0, bufferBar, i * framesPerBeat, soundLength);
             }
@@ -233,11 +266,12 @@ public class Metronome {
             @Override
             public void onPeriodicNotification(AudioTrack track) {
                 if (!updated) {
-                    if (audioTimeSignature < 2) {
+                    int beats = getTotalBeats();
+                    if (beats < 2) {
                         currentTick = 0;
                     } else {
                         currentTick++;
-                        if (currentTick >= audioTimeSignature)
+                        if (currentTick >= beats)
                             currentTick = 0;
                     }
                     eventTickSink.success(currentTick);

@@ -1,4 +1,4 @@
-﻿#include "metronome.h"
+#include "metronome.h"
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -12,8 +12,8 @@
 
 Metronome::Metronome(const std::vector<uint8_t> &mainFileBytes,
                      const std::vector<uint8_t> &accentedFileBytes,
-                     int bpm, int timeSignature, double volume, int sampleRate)
-    : audioBpm(bpm), audioTimeSignature(timeSignature), audioVolume(volume), sampleRate(sampleRate)
+                     int bpm, const std::vector<int> &accentPattern, double volume, int sampleRate)
+    : audioBpm(bpm), accentPattern(NormalizeAccentPattern(accentPattern)), audioVolume(volume), sampleRate(sampleRate)
 {
     if (mainFileBytes.empty())
     {
@@ -115,17 +115,45 @@ void Metronome::SetBPM(int bpm)
         }
     }
 }
-void Metronome::SetTimeSignature(int timeSignature)
+std::vector<int> Metronome::NormalizeAccentPattern(const std::vector<int> &pattern)
 {
+    if (pattern.empty())
+        return {4};
+    for (int group : pattern)
+        if (group < 1)
+            return {4};
+    return pattern;
+}
 
-    if (audioTimeSignature != timeSignature)
+int Metronome::GetTotalBeats() const
+{
+    int total = 0;
+    for (int group : accentPattern)
+        total += group;
+    return total;
+}
+
+bool Metronome::IsAccentBeat(int index) const
+{
+    int position = 0;
+    for (int group : accentPattern)
+    {
+        if (index == position)
+            return true;
+        position += group;
+    }
+    return false;
+}
+
+void Metronome::SetAccentPattern(const std::vector<int> &newPattern)
+{
+    const std::vector<int> normalized = NormalizeAccentPattern(newPattern);
+    if (accentPattern != normalized)
     {
         bool wasPlaying = IsPlaying();
         if (wasPlaying)
-        {
             Pause();
-        }
-        audioTimeSignature = timeSignature;
+        accentPattern = normalized;
         if (wasPlaying)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -233,18 +261,18 @@ std::vector<int16_t> Metronome::generateBuffer()
 {
     int newBeatLength = static_cast<int>(sampleRate * 60.0 / audioBpm);
     std::vector<int16_t> bufferBar;
-    if (audioTimeSignature < 2)
+    const int beats = GetTotalBeats();
+    if (beats < 2)
     {
         bufferBar.resize(newBeatLength, 0);
         std::copy_n(mainSound.begin(), min(newBeatLength, static_cast<int>(mainSound.size())), bufferBar.begin());
     }
     else
     {
-        int beats = max(1, audioTimeSignature);
         bufferBar.resize(newBeatLength * beats, 0);
         for (int i = 0; i < beats; i++)
         {
-            const std::vector<int16_t> &sound = (i == 0) ? accentedSound : mainSound;
+            const std::vector<int16_t> &sound = IsAccentBeat(i) ? accentedSound : mainSound;
             int copyLength = min(newBeatLength, static_cast<int>(sound.size()));
             std::copy_n(sound.begin(), copyLength, bufferBar.begin() + i * newBeatLength);
         }
@@ -307,19 +335,20 @@ void Metronome::OnBufferDone()
     //
     if (eventTickSink != nullptr)
     {
-        if (audioTimeSignature < 2)
+        const int beats = GetTotalBeats();
+        if (beats < 2)
         {
             currentTick = 0;
         }
         else
         {
             currentTick++;
-            if (currentTick >= audioTimeSignature)
+            if (currentTick >= beats)
                 currentTick = 0;
         }
         eventTickSink->Success(flutter::EncodableValue(currentTick));
     }
-    rampBeatInMeasure = (rampBeatInMeasure + 1) % max(1, audioTimeSignature);
+    rampBeatInMeasure = (rampBeatInMeasure + 1) % std::max(1, GetTotalBeats());
     if (rampBeatInMeasure == 0)
     {
         CompleteRampMeasure();

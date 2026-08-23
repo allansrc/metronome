@@ -30,17 +30,17 @@ class Metronome {
   private rampCompletedMeasures: number = 0;
 
   public audioBpm: number;
-  public audioTimeSignature: number;
+  public accentPattern: number[];
   public audioVolume: number;
   private readonly sampleRate: number;
   private tickCallbackEnabled: boolean = false;
 
   constructor(mainFileBytes: ArrayBuffer, accentedFileBytes: ArrayBuffer, bpm: number,
-    timeSignature: number, volume: number, sampleRate: number, sink: EventSink | null) {
+    accentPattern: number[], volume: number, sampleRate: number, sink: EventSink | null) {
     this.mainSound = mainFileBytes;
     this.accentedSound = accentedFileBytes.byteLength === 0 ? mainFileBytes : accentedFileBytes;
     this.audioBpm = bpm;
-    this.audioTimeSignature = timeSignature;
+    this.accentPattern = this.normalizeAccentPattern(accentPattern);
     this.audioVolume = volume;
     this.sampleRate = sampleRate;
     this.eventTickSink = sink;
@@ -166,12 +166,30 @@ class Metronome {
     this.emitRampProgress();
   }
 
-  async setTimeSignature(timeSignature: number): Promise<void> {
-    this.audioTimeSignature = timeSignature;
+  async setAccentPattern(accentPattern: number[]): Promise<void> {
+    this.accentPattern = this.normalizeAccentPattern(accentPattern);
     this.updated = true;
     if (this.playing) {
       await this.restart();
     }
+  }
+
+  private normalizeAccentPattern(pattern: number[]): number[] {
+    if (pattern.length === 0 || pattern.some((group) => group < 1)) return [4];
+    return pattern.slice();
+  }
+
+  private totalBeats(): number {
+    return this.accentPattern.reduce((total, group) => total + group, 0);
+  }
+
+  private isAccentBeat(index: number): boolean {
+    let position = 0;
+    for (const group of this.accentPattern) {
+      if (index === position) return true;
+      position += group;
+    }
+    return false;
   }
 
   async setAudioFile(mainFileBytes: ArrayBuffer, accentedFileBytes: ArrayBuffer): Promise<void> {
@@ -205,11 +223,12 @@ class Metronome {
     this.renderer.off('periodReach');
     const framesPerBeat = Math.floor(this.sampleRate * 60 / this.audioBpm);
     this.renderer.on('periodReach', framesPerBeat, () => {
-      if (this.audioTimeSignature < 2) {
+      const beats = this.totalBeats();
+      if (beats < 2) {
         this.eventTickSink?.success(0);
         return;
       }
-      this.tick = (this.tick + 1) % this.audioTimeSignature;
+      this.tick = (this.tick + 1) % beats;
       this.eventTickSink?.success(this.tick);
     });
   }
@@ -218,10 +237,10 @@ class Metronome {
 
   private generateBuffer(): ArrayBuffer {
     const framesPerBeat = Math.floor(this.sampleRate * 60 / this.audioBpm);
-    const beats = this.audioTimeSignature < 2 ? 1 : this.audioTimeSignature;
+    const beats = Math.max(1, this.totalBeats());
     const buffer = new Uint8Array(framesPerBeat * beats * 2);
     for (let beat = 0; beat < beats; beat++) {
-      const sound = beat === 0 && beats > 1 ? this.accentedSound : this.mainSound;
+      const sound = this.isAccentBeat(beat) ? this.accentedSound : this.mainSound;
       const source = new Uint8Array(sound).subarray(sound.byteLength > 44 ? 44 : 0);
       const offset = beat * framesPerBeat * 2;
       buffer.set(source.subarray(0, Math.min(source.length, framesPerBeat * 2)), offset);
@@ -364,7 +383,7 @@ export default class MetronomePlugin implements FlutterPlugin, MethodCallHandler
           this.bytes(args.get('mainFileBytes')),
           this.bytes(args.get('accentedFileBytes')),
           Number(args.get('bpm') ?? 120),
-          Number(args.get('timeSignature') ?? 4),
+          this.numberList(args.get('accentPattern')),
           Number(args.get('volume') ?? 0.5),
           Number(args.get('sampleRate') ?? 44100),
           this.eventTickSink
@@ -419,14 +438,14 @@ export default class MetronomePlugin implements FlutterPlugin, MethodCallHandler
         this.requireMetronome().disableTempoRamp();
         result.success(null);
         return;
-      case 'setTimeSignature':
-        await this.requireMetronome().setTimeSignature(
-          Number((call.args as Map<string, Object>).get('timeSignature'))
+      case 'setAccentPattern':
+        await this.requireMetronome().setAccentPattern(
+          this.numberList((call.args as Map<string, Object>).get('accentPattern'))
         );
         result.success(null);
         return;
-      case 'getTimeSignature':
-        result.success(this.requireMetronome().audioTimeSignature);
+      case 'getAccentPattern':
+        result.success(this.requireMetronome().accentPattern);
         return;
       case 'setAudioFile': {
         const args = call.args as Map<string, Object>;
@@ -462,6 +481,12 @@ export default class MetronomePlugin implements FlutterPlugin, MethodCallHandler
       return value.buffer;
     }
     return new ArrayBuffer(0);
+  }
+
+  private numberList(value: Object | undefined): number[] {
+    if (!Array.isArray(value)) return [4];
+    const pattern = value.map((item) => Number(item));
+    return pattern.length > 0 && pattern.every((group) => group >= 1) ? pattern : [4];
   }
 
   setTickSink(sink: EventSink | null): void {

@@ -97,12 +97,11 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
               case "getBPM":
                   result(metronome?.audioBpm)
                 break;
-              case "setTimeSignature":
-                  setTimeSignature(attributes: attributes)
-                  result(nil)
-                  return
-              case "getTimeSignature":
-                  result(metronome?.audioTimeSignature)
+              case "setAccentPattern":
+                  setAccentPattern(attributes: attributes)
+                break;
+              case "getAccentPattern":
+                  result(metronome?.accentPattern)
                 break;
               case "setAudioFile":
                   setAudioFile(attributes: attributes)
@@ -128,11 +127,19 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
             metronome?.setBPM(bpm: bpm)
         }
     }
-    private func setTimeSignature( attributes:NSDictionary?) {
+    private func setAccentPattern( attributes:NSDictionary?) {
         if metronome != nil {
-            let timeSignature: Int = (attributes?["timeSignature"] as? Int) ?? 0
-            metronome?.setTimeSignature(timeSignature: timeSignature)
+            let pattern = readAccentPattern(from: attributes, key: "accentPattern")
+            metronome?.setAccentPattern(accentPattern: pattern)
         }
+    }
+
+    private func readAccentPattern(from attributes: NSDictionary?, key: String) -> [Int] {
+        guard let raw = attributes?[key] as? [Any] else { return [4] }
+        let ints = raw.compactMap { ($0 as? NSNumber)?.intValue }
+        if ints.isEmpty { return [4] }
+        for v in ints where v < 1 { return [4] }
+        return ints
     }
     private func metronomeInit( attributes:NSDictionary?) {
         let mainFileBytes = (attributes?["mainFileBytes"] as? FlutterStandardTypedData) ?? FlutterStandardTypedData()
@@ -141,19 +148,18 @@ public class MetronomePlugin: NSObject, FlutterPlugin {
         let accentedBytes: Data = accentedFileBytes.data
         
         let enableTickCallback: Bool = (attributes?["enableTickCallback"] as? Bool) ?? true
-        let timeSignature: Int = (attributes?["timeSignature"] as? Int) ?? 0
+        let accentPattern = readAccentPattern(from: attributes, key: "accentPattern")
         let bpm: Int = (attributes?["bpm"] as? Int) ?? 120
         let volume: Float = (attributes?["volume"] as? Float) ?? 0.5
         let sampleRate: Int = (attributes?["sampleRate"] as? Int) ?? 44100
-        // 默认保持插件原有行为；宿主已统一管理音频会话时可显式关闭。
         let manageAudioSession: Bool = (attributes?["manageAudioSession"] as? Bool) ?? true
-        metronome = Metronome(
-            mainFileBytes: mainBytes,
+        metronome =  Metronome(
+            mainFileBytes:mainBytes,
             accentedFileBytes: accentedBytes,
-            bpm: bpm,
-            timeSignature: timeSignature,
-            volume: volume,
-            sampleRate: sampleRate,
+            bpm:bpm,
+            accentPattern:accentPattern,
+            volume:volume,
+            sampleRate:sampleRate,
             manageAudioSession: manageAudioSession
         )
         metronome?.enableTempoRampCallback(eventTempoRampListener)

@@ -1,4 +1,9 @@
-## Next
+## 3.0.0
+
+* **Breaking:** Replaced `int timeSignature` with `List<int> accentPattern` on `init`, `setAccentPattern`, and `getAccentPattern`. Each value is a group size; the first beat of each group is accented (e.g. `[4]` = simple quadruple, `[3, 3]` = compound 6/8 feel, `[2, 2, 3]` = common 7/8 grouping).
+* Same accent logic on Android, iOS, macOS, Web, and Windows.
+
+## 2.0.13 + 1
 
 * Add progressive tempo ramp mode with seamless measure-boundary BPM changes, progress events, and a preview timeline in the example app.
 
